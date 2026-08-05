@@ -1,0 +1,57 @@
+name: AI improvement
+about: Propose a scoped improvement ready for an AI coding agent
+labels: [ai-improvement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong, missing, slow, unsafe, or unnecessarily difficult?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Include failing checks, code locations, user feedback, measurements, or release notes.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Provide an objective checklist an agent can verify.
+      value: |
+        - [ ] Implementation is complete
+        - [ ] Tests cover the change
+        - [ ] Documentation and examples are updated
+        - [ ] AI_NATIVE_PLATFORM.yaml remains valid
+        - [ ] CHANGELOG and ROADMAP are updated when applicable
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk class
+      options:
+        - Safe maintenance
+        - Public API
+        - Breaking change
+        - Security
+        - Credentials
+        - Release
+    validations:
+      required: true
+  - type: checkboxes
+    id: governance
+    attributes:
+      label: Governance
+      options:
+        - label: I understand high-impact changes require human approval before merge.
+          required: true
