@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fatmambot33/ai-native-platform/schemas/ai-native-platform.schema.json",
+  "title": "AI Native Platform Product Manifest",
+  "type": "object",
+  "required": ["version", "standard", "product", "plugin", "interfaces", "quality", "release", "agent", "self_improvement"],
+  "properties": {
+    "version": {"const": 1},
+    "standard": {
+      "type": "object",
+      "required": ["repository", "ref"],
+      "properties": {
+        "repository": {"const": "fatmambot33/ai-native-platform"},
+        "ref": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "product": {
+      "type": "object",
+      "required": ["name", "ai_native", "plugin_first"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "ai_native": {"const": true},
+        "plugin_first": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "plugin": {"type": "object"},
+    "interfaces": {"type": "object"},
+    "quality": {"type": "object"},
+    "release": {"type": "object"},
+    "agent": {"type": "object"},
+    "self_improvement": {"type": "object"}
+  },
+  "additionalProperties": true
+}
