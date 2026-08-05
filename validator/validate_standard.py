@@ -44,8 +44,9 @@ REQUIRED_CHECKLIST_HEADINGS = (
     "## CI/CD",
     "## Distribution",
     "## Community",
+    "## Self-Improvement",
     "## AI-Native Excellence",
-    "### Definition of Done",
+    "## Definition of Done",
 )
 
 REQUIRED_AGENT_GUARANTEES = {
@@ -155,7 +156,7 @@ def validate_standard() -> list[str]:
         if heading not in checklist:
             errors.append(f"checklist missing heading: {heading}")
 
-    definition = checklist.split("### Definition of Done", maxsplit=1)
+    definition = checklist.split("## Definition of Done", maxsplit=1)
     if len(definition) != 2 or "Every capability is defined once" not in definition[1]:
         errors.append("checklist Definition of Done is incomplete")
 
