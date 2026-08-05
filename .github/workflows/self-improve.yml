@@ -1,0 +1,64 @@
+name: AI self-improvement discovery
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Discover maintenance signals
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches=$(grep -RInE 'TODO|FIXME|HACK|XXX' --exclude-dir=.git . || true)
+          if [ -z "$matches" ]; then
+            echo 'found=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'found=true' >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<EOF'
+            echo 'Automated maintenance discovery found unresolved engineering signals.'
+            echo
+            echo '```text'
+            echo "$matches" | head -n 100
+            echo '```'
+            echo
+            echo 'Acceptance criteria:'
+            echo '- [ ] Triage each signal as actionable, obsolete, or intentionally deferred'
+            echo '- [ ] Implement safe scoped fixes with tests'
+            echo '- [ ] Create separate governed issues for high-impact changes'
+            echo '- [ ] Keep the platform manifest valid'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Create deduplicated issue
+        if: steps.discover.outputs.found == 'true'
+        uses: actions/github-script@v7
+        env:
+          BODY: ${{ steps.discover.outputs.body }}
+        with:
+          script: |
+            const title = '[AI discovery] Resolve repository maintenance signals';
+            const { data } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'ai-improvement'
+            });
+            if (data.some(issue => issue.title === title)) return;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: process.env.BODY,
+              labels: ['ai-improvement', 'maintenance']
+            });
