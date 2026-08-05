@@ -1,0 +1,73 @@
+version: 1
+standard:
+  name: First Class AI Native Platform
+  repository: fatmambot33/ai-native-platform
+  lifecycle: self_hosting
+  versioning: semver
+
+requirements:
+  product:
+    ai_native: true
+    plugin_first: true
+    typed: true
+    structured_outputs: true
+  plugin:
+    manifest: true
+    codex_support: true
+    marketplace_support: true
+    deterministic_discovery: true
+    capability_metadata: true
+  credentials:
+    local_only: true
+    env_file: .env
+    env_example: true
+    never_echo: true
+    never_commit: true
+    never_store_remote: true
+    configure_command_when_required: true
+    doctor_command_when_required: true
+  interfaces:
+    sdk: true
+    cli: true
+    plugin: true
+    json_schema: true
+    openai_tools: true
+  quality:
+    tests: true
+    typing: true
+    documentation: true
+    examples: true
+    compatibility: true
+    security_scan: true
+    plugin_validation: true
+  self_improvement:
+    enabled: true
+    work_queue: github_issues
+    issue_templates: true
+    scheduled_discovery: true
+    deduplicate_issues: true
+    agent_ready_acceptance_criteria: true
+    agent_can_prepare_pr: true
+    ci_required_before_merge: true
+    roadmap_updates: true
+    changelog_updates: true
+  governance:
+    human_approval_required:
+      - breaking_changes
+      - security_changes
+      - credential_changes
+      - public_api_changes
+      - release_changes
+    safe_auto_merge_allowed:
+      - documentation
+      - tests
+      - formatting
+      - examples
+      - non_breaking_maintenance
+
+required_agent_guarantees:
+  - deterministic_tool_discovery
+  - structured_outputs
+  - issue_driven_improvement
+  - ci_validated_changes
+  - governed_autonomy
