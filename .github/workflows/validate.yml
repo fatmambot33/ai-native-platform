@@ -1,0 +1,39 @@
+name: Validate AI-native platform
+
+on:
+  workflow_call:
+    inputs:
+      manifest:
+        description: Product manifest path
+        required: false
+        type: string
+        default: AI_NATIVE_PLATFORM.yaml
+      standard_ref:
+        description: Standard repository ref
+        required: false
+        type: string
+        default: main
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout canonical validator
+        uses: actions/checkout@v4
+        with:
+          repository: fatmambot33/ai-native-platform
+          ref: ${{ inputs.standard_ref || 'main' }}
+          path: .ai-native-standard
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check pyyaml
+      - name: Validate product contract
+        run: python .ai-native-standard/validator/validate.py "${{ inputs.manifest || 'AI_NATIVE_PLATFORM.yaml' }}" --root .
