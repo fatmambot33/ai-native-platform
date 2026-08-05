@@ -11,12 +11,25 @@ requirements:
     plugin_first: true
     typed: true
     structured_outputs: true
+  packaging:
+    pyproject: true
+    pypi_install_documented: true
+    git_install_documented: true
+    editable_install_documented: true
+    build_smoke_test: true
   plugin:
     manifest: true
     codex_support: true
     marketplace_support: true
+    typed_contract: true
     deterministic_discovery: true
     capability_metadata: true
+    contract_tests: true
+  typing:
+    public_api_typed: true
+    marker_or_explicit_contract: true
+    strict_check_in_ci: true
+    structured_tool_schemas: true
   credentials:
     local_only: true
     env_file: .env
@@ -26,6 +39,13 @@ requirements:
     never_store_remote: true
     configure_command_when_required: true
     doctor_command_when_required: true
+  documentation:
+    readme: true
+    installation: true
+    plugin_guide: true
+    sdk_or_api: true
+    examples: true
+    agent_instructions: true
   interfaces:
     sdk: true
     cli: true
@@ -57,6 +77,7 @@ requirements:
       - security_changes
       - credential_changes
       - public_api_changes
+      - permission_expansion
       - release_changes
     safe_auto_merge_allowed:
       - documentation
@@ -64,6 +85,22 @@ requirements:
       - formatting
       - examples
       - non_breaking_maintenance
+
+evidence:
+  mode: repository
+  required:
+    - packaging_metadata
+    - installation_documentation
+    - plugin_manifest
+    - plugin_marketplace
+    - typed_contract
+    - typing_contract
+    - strict_type_check
+    - plugin_tests
+    - general_tests
+    - agent_instructions
+    - self_improvement_workflow
+    - improvement_issue_template
 
 required_agent_guarantees:
   - deterministic_tool_discovery
