@@ -1,71 +1,63 @@
 # Roadmap
 
-The standard advances only when the previous phase has objective evidence.
-
 ## Phase 0 — Truthful foundation
 
-Status: **implemented in the v0.1 roadmap pull request**
+Status: **complete**
 
-- [x] Fix issue-form syntax and label assumptions.
-- [x] Align self-improvement workflow naming.
-- [x] Add the advertised templates.
-- [x] Document private-repository consumption.
-- [x] Replace floating production references with exact-version guidance.
+- [x] Correct repository metadata, issue forms, templates, and workflow naming.
+- [x] Document immutable references and private-repository consumption.
 
 ## Phase 1 — Authoritative contract
 
-Status: **implemented in the v0.1 roadmap pull request**
+Status: **complete**
 
 - [x] Enforce JSON Schema draft 2020-12.
-- [x] Reject unknown controlled fields.
-- [x] Add explicit extension namespace.
-- [x] Add product profiles and conditional interface rules.
-- [x] Replace broad filesystem heuristics with declared repository evidence.
-- [x] Keep semantic validation for cross-field rules that JSON Schema cannot express clearly.
+- [x] Use profile-aware rules and explicit repository evidence.
+- [x] Reject unknown controlled fields while retaining `extensions`.
 
 ## Phase 2 — Conformance product
 
-Status: **core implemented; advanced reporting remains**
+Status: **complete for v0.1.0**
 
-- [x] Package an installable CLI.
-- [x] Add `init`, `validate`, `score`, and `doctor`.
-- [x] Add JSON output.
-- [x] Add unit and repository-evidence tests.
-- [ ] Add SARIF output and GitHub code-scanning annotations.
-- [ ] Add migration automation between manifest versions.
-- [ ] Add consumer fixture repositories for every profile.
+- [x] Provide `init`, `validate`, `score`, and `doctor`.
+- [x] Provide JSON and SARIF output.
+- [x] Provide deterministic `upgrade` with dry-run and diff.
+- [x] Add passing and focused failing fixtures for every profile.
+- [x] Exercise local credential requirements.
+- [x] Test stable finding codes on Python 3.10 and 3.12.
 
 ## Phase 3 — Trustworthy release
 
-Status: **foundation implemented; release intentionally gated**
+Status: **repository implementation complete; administrative activation remains**
 
-- [x] Add changelog, roadmap, security policy, contribution guide, agent instructions, and PR template.
-- [x] Add quality, CodeQL, and dependency-update workflows.
-- [x] Retain CodeQL SARIF artifacts while repository code scanning is unavailable.
-- [x] Add package build smoke tests.
-- [ ] Decide public versus private distribution.
-- [ ] Enable repository code scanning and publish SARIF findings.
-- [ ] Configure branch protection and required checks.
-- [ ] Prove private and public consumer workflows.
-- [ ] Publish signed `v0.1.0` release.
-- [ ] Add provenance attestations and SBOM.
+- [x] Choose private distribution.
+- [x] Add a complete private consumer repository fixture.
+- [x] Build wheel and source artifacts.
+- [x] Generate checksums and SPDX SBOM.
+- [x] Generate provenance inputs and GitHub build attestations.
+- [x] Verify tag and package version alignment.
+- [x] Publish immutable release assets from the tag workflow.
+- [ ] Enable branch protection and require Quality, validation, and CodeQL.
+- [ ] Enable GitHub code-scanning alert publication if supported by the repository plan.
+- [ ] Provision the private consumer token and run the fixture from a separate repository.
+- [ ] Create the immutable `v0.1.0` tag after the release PR merges.
 
 ## Phase 4 — Evidence-driven self-improvement
 
-Status: **baseline implemented**
+Status: **complete for read-only discovery and issue creation**
 
-- [x] Produce structured canonical findings.
-- [x] Create one deduplicated issue per finding.
-- [x] Preserve human approval gates.
-- [ ] Ingest failed and flaky CI signals.
-- [ ] Detect dependency, documentation, schema, evaluation, and release drift.
-- [ ] Add governed safe-maintenance PR preparation.
+- [x] Detect canonical, fixture, and release drift.
+- [x] Ingest normalized CI, dependency, docs, schema, evaluation, and release signals.
+- [x] Redact secret assignments.
+- [x] Deduplicate with stable fingerprints.
+- [x] Support suppression with expiry.
+- [x] Enforce an issue budget.
+- [x] Keep branch and PR preparation disabled.
 
 ## `v1.0.0` exit criteria
 
-- At least three materially different repositories consume the standard.
-- Every profile has a passing and failing fixture.
-- The contract has migration tests and compatibility guarantees.
-- The reusable workflow works with documented public and private distribution modes.
-- Releases include changelog, SBOM, provenance, and signed immutable tags.
-- No repository-specific exception is required to pass conformance.
+- Three materially different real repositories consume the standard.
+- Private workflow consumption is proven outside this repository.
+- Branch protection and required checks are enabled.
+- GitHub code-scanning alerts are published or an equivalent reviewed SARIF process is adopted.
+- No repository-specific conformance exception is required.
