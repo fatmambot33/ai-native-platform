@@ -13,6 +13,7 @@ authors = [{name = "fatmambot33"}]
 dependencies = [
   "jsonschema>=4.23,<5",
   "PyYAML>=6.0,<7",
+  "tomli>=2.0,<3",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -52,4 +53,5 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
+"ai_native.py" = ["E501"]
 "tools/improvement_engine.py" = ["E402"]
