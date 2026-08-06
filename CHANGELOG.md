@@ -18,6 +18,7 @@ All notable changes are documented here. The project follows semantic versioning
 - Corrected the GitHub issue form syntax.
 - Removed dependency on nonexistent custom labels.
 - Added private-repository token support to the reusable workflow.
+- Upgraded CodeQL to v4 and retained SARIF artifacts when GitHub code scanning is unavailable.
 
 ## 0.1.0 - Pending
 

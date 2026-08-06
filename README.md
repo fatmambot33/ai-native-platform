@@ -88,6 +88,10 @@ This repository is currently private. A consuming private repository may need to
 
 Never use `@main` in a production consumer. Pin an exact semantic release or immutable commit SHA.
 
+## Security scanning
+
+CodeQL runs on pull requests, pushes to `main`, and a weekly schedule. While GitHub code scanning is unavailable for this private repository, the workflow retains the generated SARIF as a 14-day workflow artifact instead of failing during upload. Enabling repository code scanning and publishing alerts is a release gate tracked separately.
+
 ## Repository structure
 
 - `schemas/ai-native-platform.schema.json` — canonical product contract

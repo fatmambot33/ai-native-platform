@@ -41,8 +41,10 @@ Status: **foundation implemented; release intentionally gated**
 
 - [x] Add changelog, roadmap, security policy, contribution guide, agent instructions, and PR template.
 - [x] Add quality, CodeQL, and dependency-update workflows.
+- [x] Retain CodeQL SARIF artifacts while repository code scanning is unavailable.
 - [x] Add package build smoke tests.
 - [ ] Decide public versus private distribution.
+- [ ] Enable repository code scanning and publish SARIF findings.
 - [ ] Configure branch protection and required checks.
 - [ ] Prove private and public consumer workflows.
 - [ ] Publish signed `v0.1.0` release.
