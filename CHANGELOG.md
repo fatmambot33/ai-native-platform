@@ -14,7 +14,7 @@ All notable changes are documented here.
 - Immutable registry and continuous conformance checks for three real consumer repositories.
 - Vendored-contract distribution proven in PermutiveAPI, MatplotLibAPI, and openai-sdk-helpers.
 - Bounded evidence-driven self-improvement with redaction, suppression, fingerprinting, and issue budgets.
-- SHA-256 checksums, SPDX SBOM, SLSA-compatible provenance inputs, and GitHub build attestations.
+- SHA-256 checksums, SPDX SBOM, verified SLSA-compatible provenance, and conditional GitHub-hosted attestations.
 - Idempotent verified-main release workflow that creates the immutable tag and GitHub prerelease.
 
 ### Security
@@ -22,6 +22,7 @@ All notable changes are documented here.
 - Local-only credential contract and credential fixture.
 - CodeQL v4 analysis with reviewed retained SARIF across the standard and registered consumers.
 - Secret redaction for normalized improvement signals.
+- Private-release provenance verification independent of GitHub's plan-limited attestations API.
 
 ### Distribution
 

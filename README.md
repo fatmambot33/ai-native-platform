@@ -123,18 +123,20 @@ A verified `main` run must pass:
 - wheel and source builds;
 - SHA-256 checksum verification;
 - SPDX 2.3 SBOM generation;
-- provenance metadata and GitHub build attestations.
+- SLSA-compatible provenance subject verification.
 
 The idempotent release workflow creates the immutable semantic tag and GitHub prerelease only after
-those gates pass. Later `main` changes cannot move the tag or replace release assets. See
-`docs/RELEASE.md`.
+those gates pass. Checksums, SBOM, and provenance are published with the artifacts. GitHub-hosted
+attestations are added automatically when repository visibility and account capabilities support
+them. Later `main` changes cannot move the tag or replace release assets. See `docs/RELEASE.md`.
 
 ## Repository-plan control
 
-GitHub reports that protected-branch rulesets are unavailable for this private repository on the
-current plan. The v0.1 release workflow therefore duplicates and records all required release checks
-as an equivalent control. If the repository becomes public or the plan changes, required-check
-branch protection should be enabled as an additional control.
+GitHub reports that protected-branch rulesets and hosted attestations are unavailable for this
+user-owned private repository on the current plan. The v0.1 release workflow therefore duplicates
+and records all required checks and publishes independently verifiable integrity metadata as the
+active control. If visibility or plan capabilities change, required-check branch protection and
+hosted attestations become additional controls.
 
 ## Repository structure
 
