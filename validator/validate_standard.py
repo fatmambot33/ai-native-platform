@@ -8,7 +8,6 @@ import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -95,18 +94,28 @@ def validate_standard(root: Path = ROOT) -> list[Finding]:
 
     for relative in REQUIRED_FILES:
         if not (root / relative).exists():
-            findings.append(Finding("standard.file_missing", "Required canonical file is missing.", relative))
+            findings.append(
+                Finding(
+                    "standard.file_missing",
+                    "Required canonical file is missing.",
+                    relative,
+                )
+            )
 
     if findings:
         return findings
 
     standard = load_mapping(root / "standard/AI_NATIVE_PLATFORM.yaml")
     if standard.get("version") != 1:
-        findings.append(Finding("standard.version_invalid", "Standard version must be 1.", "version"))
+        findings.append(
+            Finding("standard.version_invalid", "Standard version must be 1.", "version")
+        )
 
     identity = standard.get("standard", {})
     if not isinstance(identity, dict):
-        findings.append(Finding("standard.identity_invalid", "standard must be a mapping.", "standard"))
+        findings.append(
+            Finding("standard.identity_invalid", "standard must be a mapping.", "standard")
+        )
     else:
         if identity.get("repository") != STANDARD_REPOSITORY:
             findings.append(
@@ -118,7 +127,11 @@ def validate_standard(root: Path = ROOT) -> list[Finding]:
             )
         if identity.get("versioning") != "semver":
             findings.append(
-                Finding("standard.versioning_invalid", "Versioning must be semver.", "standard.versioning")
+                Finding(
+                    "standard.versioning_invalid",
+                    "Versioning must be semver.",
+                    "standard.versioning",
+                )
             )
         release = str(identity.get("current_release", ""))
         if re.fullmatch(r"\d+\.\d+\.\d+", release) is None:
@@ -132,19 +145,31 @@ def validate_standard(root: Path = ROOT) -> list[Finding]:
 
     profiles = standard.get("profiles", {})
     if not isinstance(profiles, dict):
-        findings.append(Finding("standard.profiles_invalid", "profiles must be a mapping.", "profiles"))
+        findings.append(
+            Finding("standard.profiles_invalid", "profiles must be a mapping.", "profiles")
+        )
     else:
         missing_profiles = EXPECTED_PROFILES - set(profiles)
         for profile in sorted(missing_profiles):
             findings.append(
-                Finding("standard.profile_missing", f"Required profile {profile!r} is missing.", "profiles")
+                Finding(
+                    "standard.profile_missing",
+                    f"Required profile {profile!r} is missing.",
+                    "profiles",
+                )
             )
 
     try:
         schema = load_schema()
         Draft202012Validator.check_schema(schema)
     except (OSError, ValueError, json.JSONDecodeError, SchemaError) as exc:
-        findings.append(Finding("standard.schema_invalid", str(exc), "schemas/ai-native-platform.schema.json"))
+        findings.append(
+            Finding(
+                "standard.schema_invalid",
+                str(exc),
+                "schemas/ai-native-platform.schema.json",
+            )
+        )
 
     template = load_mapping(root / "templates/AI_NATIVE_PLATFORM.yaml")
     for finding in contract_findings(template):
@@ -169,14 +194,28 @@ def validate_standard(root: Path = ROOT) -> list[Finding]:
             )
         )
 
-    issue_form = yaml.safe_load((root / ".github/ISSUE_TEMPLATE/ai-improvement.yml").read_text(encoding="utf-8"))
+    issue_form = yaml.safe_load(
+        (root / ".github/ISSUE_TEMPLATE/ai-improvement.yml").read_text(
+            encoding="utf-8"
+        )
+    )
     if not isinstance(issue_form, dict):
-        findings.append(Finding("standard.issue_form_invalid", "Issue form must be a mapping.", str(ISSUE_FORM)))
+        findings.append(
+            Finding(
+                "standard.issue_form_invalid",
+                "Issue form must be a mapping.",
+                str(ISSUE_FORM),
+            )
+        )
     else:
         for key in ("name", "description", "body"):
             if not issue_form.get(key):
                 findings.append(
-                    Finding("standard.issue_form_key_missing", f"Issue form requires {key!r}.", str(ISSUE_FORM))
+                    Finding(
+                        "standard.issue_form_key_missing",
+                        f"Issue form requires {key!r}.",
+                        str(ISSUE_FORM),
+                    )
                 )
         if "about" in issue_form:
             findings.append(

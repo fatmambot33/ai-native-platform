@@ -16,7 +16,8 @@ from validator.validate_standard import validate_standard  # noqa: E402
 
 def main() -> int:
     """Print structured findings without failing the discovery workflow."""
-    print(json.dumps([asdict(finding) for finding in validate_standard()], indent=2, sort_keys=True))
+    payload = [asdict(finding) for finding in validate_standard()]
+    print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 

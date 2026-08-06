@@ -9,9 +9,10 @@ import re
 import shutil
 import sys
 import sysconfig
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -275,7 +276,13 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
     evidence = data.get("evidence", {})
     paths = evidence.get("paths", {}) if isinstance(evidence, Mapping) else {}
     if not isinstance(paths, Mapping):
-        return [Finding("evidence.paths_invalid", "Evidence paths must be a mapping.", "evidence.paths")]
+        return [
+            Finding(
+                "evidence.paths_invalid",
+                "Evidence paths must be a mapping.",
+                "evidence.paths",
+            )
+        ]
 
     for key in sorted(required_evidence_keys(data)):
         declarations = _as_paths(paths.get(key))
@@ -288,7 +295,11 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
                 )
             )
             continue
-        missing = [declaration for declaration in declarations if not _path_exists(root, declaration)]
+        missing = [
+            declaration
+            for declaration in declarations
+            if not _path_exists(root, declaration)
+        ]
         if missing:
             findings.append(
                 Finding(
@@ -301,7 +312,9 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
     return findings
 
 
-def validate_manifest(manifest: Path, root: Path | None = None) -> tuple[dict[str, Any], list[Finding]]:
+def validate_manifest(
+    manifest: Path, root: Path | None = None
+) -> tuple[dict[str, Any], list[Finding]]:
     """Validate one product manifest and its repository evidence."""
     data = load_mapping(manifest)
     repository_root = (root or manifest.parent).resolve()
@@ -443,7 +456,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version="ai-native-platform 0.1.0")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    validate_parser = subparsers.add_parser("validate", help="Validate a repository manifest and evidence")
+    validate_parser = subparsers.add_parser(
+        "validate", help="Validate a repository manifest and evidence"
+    )
     validate_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
     validate_parser.add_argument("--root")
     validate_parser.add_argument("--json", action="store_true")
@@ -455,7 +470,9 @@ def build_parser() -> argparse.ArgumentParser:
     score_parser.add_argument("--json", action="store_true")
     score_parser.set_defaults(handler=command_score)
 
-    doctor_parser = subparsers.add_parser("doctor", help="Check installation and repository readiness")
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check installation and repository readiness"
+    )
     doctor_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
     doctor_parser.add_argument("--root")
     doctor_parser.set_defaults(handler=command_doctor)
