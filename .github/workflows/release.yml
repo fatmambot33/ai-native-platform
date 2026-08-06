@@ -98,7 +98,7 @@ jobs:
           PY
       - name: Publish GitHub build attestations when supported
         if: steps.state.outputs.publish == 'true' && github.event.repository.private == false
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.whl
