@@ -24,7 +24,22 @@ jobs:
       - run: ruff check .
       - run: pytest
       - run: python validator/validate_standard.py
+      - run: python tools/discover_improvements.py --budget 20 > improvement-findings.json
+      - name: Require a clean canonical discovery report
+        run: |
+          python - <<'PY'
+          import json
+          findings = json.load(open('improvement-findings.json', encoding='utf-8'))
+          if findings:
+              raise SystemExit(json.dumps(findings, indent=2))
+          PY
       - run: python -m build
+      - run: python tools/release_artifacts.py dist
+      - name: Verify release metadata
+        run: |
+          test -s dist/SHA256SUMS
+          test -s dist/sbom.spdx.json
+          test -s dist/provenance.json
       - name: Wheel installation smoke test
         shell: bash
         run: |
@@ -32,3 +47,6 @@ jobs:
           .smoke-venv/bin/python -m pip install --disable-pip-version-check dist/*.whl
           .smoke-venv/bin/ai-native --version
           .smoke-venv/bin/ai-native init /tmp/AI_NATIVE_PLATFORM.yaml
+          .smoke-venv/bin/ai-native upgrade /tmp/AI_NATIVE_PLATFORM.yaml --dry-run
+          .smoke-venv/bin/ai-native validate fixtures/passing/library.yaml --root fixtures --format sarif --output /tmp/ai-native.sarif
+          test -s /tmp/ai-native.sarif

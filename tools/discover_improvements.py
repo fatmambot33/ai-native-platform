@@ -1,23 +1,30 @@
-"""Emit structured canonical standard findings for issue automation."""
+"""Print bounded evidence-driven improvement findings."""
 
 from __future__ import annotations
 
+import argparse
 import json
-import sys
-from dataclasses import asdict
-from pathlib import Path
+import os
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from validator.validate_standard import validate_standard  # noqa: E402
+from improvement_engine import discover
 
 
 def main() -> int:
     """Print structured findings without failing the discovery workflow."""
-    payload = [asdict(finding) for finding in validate_standard()]
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=int(os.environ.get("AI_NATIVE_ISSUE_BUDGET", "5")),
+    )
+    args = parser.parse_args()
+    print(
+        json.dumps(
+            [finding.as_dict() for finding in discover(budget=args.budget)],
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 

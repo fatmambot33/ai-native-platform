@@ -1,0 +1,14 @@
+name: AI-native conformance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  conformance:
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.1.0
+    with:
+      manifest: AI_NATIVE_PLATFORM.yaml
+    secrets:
+      standard_token: ${{ secrets.AI_NATIVE_PLATFORM_TOKEN }}

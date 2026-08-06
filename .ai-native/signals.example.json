@@ -1,0 +1,11 @@
+[
+  {
+    "kind": "ci",
+    "code": "ci.flaky",
+    "title": "Quality matrix is intermittently failing",
+    "body": "Normalized evidence only; never paste secrets or raw untrusted logs.",
+    "path": ".github/workflows/quality.yml",
+    "severity": "high",
+    "status": "open"
+  }
+]

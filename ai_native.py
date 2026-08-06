@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import difflib
 import json
 import os
 import re
@@ -18,9 +20,11 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+__version__ = "0.1.0"
 STANDARD_REPOSITORY = "fatmambot33/ai-native-platform"
 SCHEMA_NAME = "ai-native-platform.schema.json"
 TEMPLATE_NAME = "AI_NATIVE_PLATFORM.yaml"
+CURRENT_MANIFEST_VERSION = 1
 REF_PATTERN = re.compile(r"(?:[0-9a-f]{40}|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)")
 REQUIRED_AGENT_GUARANTEES = {
     "deterministic_tool_discovery",
@@ -43,13 +47,7 @@ PROFILE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "interfaces.json_schema",
     ),
 }
-BASE_EVIDENCE = {
-    "readme",
-    "tests",
-    "agent_instructions",
-    "typing",
-    "ci",
-}
+BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 
 
 @dataclass(frozen=True)
@@ -59,6 +57,7 @@ class Finding:
     code: str
     message: str
     path: str | None = None
+    level: str = "error"
 
     def render(self) -> str:
         """Return a human-readable finding."""
@@ -112,6 +111,16 @@ def load_mapping(path: Path) -> dict[str, Any]:
     return data
 
 
+def dump_mapping(data: Mapping[str, Any]) -> str:
+    """Serialize a manifest deterministically."""
+    return yaml.safe_dump(
+        dict(data),
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    )
+
+
 def load_schema() -> dict[str, Any]:
     """Read and validate the canonical JSON Schema."""
     data = json.loads(schema_path().read_text(encoding="utf-8"))
@@ -134,8 +143,7 @@ def read_path(data: Mapping[str, Any], dotted_path: str) -> Any:
 def contract_findings(data: Mapping[str, Any]) -> list[Finding]:
     """Validate schema and semantic product-contract requirements."""
     findings: list[Finding] = []
-    schema = load_schema()
-    validator = Draft202012Validator(schema)
+    validator = Draft202012Validator(load_schema())
     for error in sorted(validator.iter_errors(data), key=lambda item: list(item.absolute_path)):
         path = ".".join(str(part) for part in error.absolute_path) or None
         findings.append(Finding("schema.invalid", error.message, path))
@@ -147,7 +155,7 @@ def contract_findings(data: Mapping[str, Any]) -> list[Finding]:
             findings.append(
                 Finding(
                     "standard.ref_not_immutable",
-                    "Pin an exact semantic version such as v0.1.0 or a 40-character commit SHA.",
+                    "Pin an exact semantic version or a 40-character commit SHA.",
                     "standard.ref",
                 )
             )
@@ -207,7 +215,6 @@ def contract_findings(data: Mapping[str, Any]) -> list[Finding]:
                 "agent.guarantees",
             )
         )
-
     return _deduplicate(findings)
 
 
@@ -248,7 +255,6 @@ def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
 
     if isinstance(self_improvement, Mapping) and self_improvement.get("enabled") is True:
         keys.update({"self_improvement_workflow", "improvement_issue_template"})
-
     return keys
 
 
@@ -263,10 +269,11 @@ def _as_paths(value: Any) -> list[str]:
 
 def _path_exists(root: Path, declaration: str) -> bool:
     """Return whether a repository-relative path or glob has evidence."""
-    if Path(declaration).is_absolute() or ".." in Path(declaration).parts:
+    path = Path(declaration)
+    if path.is_absolute() or ".." in path.parts:
         return False
     if any(character in declaration for character in "*?["):
-        return any(path.exists() for path in root.glob(declaration))
+        return any(candidate.exists() for candidate in root.glob(declaration))
     return (root / declaration).exists()
 
 
@@ -295,11 +302,7 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
                 )
             )
             continue
-        missing = [
-            declaration
-            for declaration in declarations
-            if not _path_exists(root, declaration)
-        ]
+        missing = [declaration for declaration in declarations if not _path_exists(root, declaration)]
         if missing:
             findings.append(
                 Finding(
@@ -308,12 +311,12 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
                     f"evidence.paths.{key}",
                 )
             )
-
     return findings
 
 
 def validate_manifest(
-    manifest: Path, root: Path | None = None
+    manifest: Path,
+    root: Path | None = None,
 ) -> tuple[dict[str, Any], list[Finding]]:
     """Validate one product manifest and its repository evidence."""
     data = load_mapping(manifest)
@@ -337,17 +340,14 @@ def conformance_score(findings: Iterable[Finding]) -> int:
         "evidence.path_missing": 7,
         "evidence.paths_invalid": 20,
     }
-    score = 100
-    for finding in findings:
-        score -= deductions.get(finding.code, 5)
-    return max(0, score)
+    return max(0, 100 - sum(deductions.get(item.code, 5) for item in findings))
 
 
 def _deduplicate(findings: Iterable[Finding]) -> list[Finding]:
     """Return stable unique findings."""
-    unique: dict[tuple[str, str, str | None], Finding] = {}
+    unique: dict[tuple[str, str, str | None, str], Finding] = {}
     for finding in findings:
-        unique[(finding.code, finding.message, finding.path)] = finding
+        unique[(finding.code, finding.message, finding.path, finding.level)] = finding
     return list(unique.values())
 
 
@@ -361,30 +361,91 @@ def _result_payload(manifest: Path, findings: list[Finding]) -> dict[str, Any]:
     }
 
 
-def _print_result(manifest: Path, findings: list[Finding], as_json: bool) -> None:
-    """Print validation output."""
-    payload = _result_payload(manifest, findings)
-    if as_json:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return
+def sarif_payload(manifest: Path, findings: Sequence[Finding]) -> dict[str, Any]:
+    """Build a SARIF 2.1.0 result document."""
+    rules: dict[str, dict[str, Any]] = {}
+    results: list[dict[str, Any]] = []
+    for finding in findings:
+        rules.setdefault(
+            finding.code,
+            {
+                "id": finding.code,
+                "name": finding.code.replace(".", "_"),
+                "shortDescription": {"text": finding.message},
+                "helpUri": (
+                    "https://github.com/fatmambot33/ai-native-platform"
+                    "/blob/v0.1.0/README.md"
+                ),
+                "defaultConfiguration": {"level": finding.level},
+            },
+        )
+        result: dict[str, Any] = {
+            "ruleId": finding.code,
+            "level": finding.level,
+            "message": {"text": finding.message},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": str(manifest).replace("\\", "/")}
+                    }
+                }
+            ],
+        }
+        if finding.path:
+            result["properties"] = {"manifestPath": finding.path}
+        results.append(result)
+
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "ai-native-platform",
+                        "version": __version__,
+                        "informationUri": "https://github.com/fatmambot33/ai-native-platform",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+
+def _format_result(manifest: Path, findings: list[Finding], output_format: str) -> str:
+    """Serialize one validation result."""
+    if output_format == "json":
+        return json.dumps(_result_payload(manifest, findings), indent=2, sort_keys=True)
+    if output_format == "sarif":
+        return json.dumps(sarif_payload(manifest, findings), indent=2, sort_keys=True)
     if findings:
-        print(f"AI-native platform validation failed ({payload['score']}/100):")
-        for finding in findings:
-            print(f"- {finding.render()}")
+        lines = [f"AI-native platform validation failed ({conformance_score(findings)}/100):"]
+        lines.extend(f"- {finding.render()}" for finding in findings)
+        return "\n".join(lines)
+    return "AI-native platform validation passed (100/100)."
+
+
+def _write_or_print(text: str, output: str | None) -> None:
+    """Write text to a file or standard output."""
+    if output:
+        destination = Path(output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(text + "\n", encoding="utf-8")
     else:
-        print("AI-native platform validation passed (100/100).")
+        print(text)
 
 
 def command_validate(args: argparse.Namespace) -> int:
     """Run the validate command."""
     manifest = Path(args.manifest)
+    output_format = "json" if args.json else args.format
     try:
         _, findings = validate_manifest(manifest, Path(args.root) if args.root else None)
     except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError, SchemaError) as exc:
-        finding = Finding("validator.error", str(exc))
-        _print_result(manifest, [finding], args.json)
-        return 2
-    _print_result(manifest, findings, args.json)
+        findings = [Finding("validator.error", str(exc))]
+    _write_or_print(_format_result(manifest, findings, output_format), args.output)
     return 1 if findings else 0
 
 
@@ -405,10 +466,76 @@ def command_score(args: argparse.Namespace) -> int:
     return 1 if findings else 0
 
 
+def _deep_merge(defaults: Mapping[str, Any], source: Mapping[str, Any]) -> dict[str, Any]:
+    """Merge user values over canonical defaults."""
+    merged: dict[str, Any] = copy.deepcopy(dict(defaults))
+    for key, value in source.items():
+        if key in merged and isinstance(merged[key], Mapping) and isinstance(value, Mapping):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Upgrade a legacy manifest to the current stable contract."""
+    source_version = data.get("version", 0)
+    if not isinstance(source_version, int):
+        raise ValueError("Manifest version must be an integer")
+    if source_version > CURRENT_MANIFEST_VERSION:
+        raise ValueError(
+            f"Manifest version {source_version} is newer than supported "
+            f"version {CURRENT_MANIFEST_VERSION}"
+        )
+    if source_version == CURRENT_MANIFEST_VERSION:
+        return copy.deepcopy(dict(data))
+
+    defaults = load_mapping(template_path())
+    migrated = _deep_merge(defaults, data)
+    migrated["version"] = CURRENT_MANIFEST_VERSION
+    standard = migrated.setdefault("standard", {})
+    if isinstance(standard, dict):
+        standard["repository"] = STANDARD_REPOSITORY
+        standard.setdefault("ref", f"v{__version__}")
+    return migrated
+
+
+def command_upgrade(args: argparse.Namespace) -> int:
+    """Upgrade a manifest with dry-run and diff support."""
+    source = Path(args.manifest)
+    try:
+        original = load_mapping(source)
+        upgraded = migrate_manifest(original)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"Upgrade failed: {exc}", file=sys.stderr)
+        return 2
+
+    old_text = source.read_text(encoding="utf-8")
+    new_text = dump_mapping(upgraded)
+    if args.diff or args.dry_run:
+        diff = difflib.unified_diff(
+            old_text.splitlines(),
+            new_text.splitlines(),
+            fromfile=str(source),
+            tofile=str(args.output or source),
+            lineterm="",
+        )
+        print("\n".join(diff) or "Manifest is already current.")
+    if args.dry_run:
+        return 0
+
+    destination = Path(args.output) if args.output else source
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(new_text, encoding="utf-8")
+    print(f"Upgraded {source} to manifest version {CURRENT_MANIFEST_VERSION}.")
+    return 0
+
+
 def command_doctor(args: argparse.Namespace) -> int:
     """Check validator installation and repository prerequisites."""
-    checks: list[tuple[str, bool, str]] = []
-    checks.append(("Python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0]))
+    checks: list[tuple[str, bool, str]] = [
+        ("Python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0])
+    ]
     try:
         resolved_schema = schema_path()
         load_schema()
@@ -416,8 +543,7 @@ def command_doctor(args: argparse.Namespace) -> int:
     except (OSError, ValueError, json.JSONDecodeError, SchemaError) as exc:
         checks.append(("JSON Schema", False, str(exc)))
     try:
-        resolved_template = template_path()
-        checks.append(("Starter template", True, str(resolved_template)))
+        checks.append(("Starter template", True, str(template_path())))
     except OSError as exc:
         checks.append(("Starter template", False, str(exc)))
 
@@ -431,11 +557,9 @@ def command_doctor(args: argparse.Namespace) -> int:
     else:
         checks.append(("Repository manifest", False, f"not found: {manifest}"))
 
-    failed = False
     for label, passed, detail in checks:
-        failed = failed or not passed
         print(f"{'PASS' if passed else 'FAIL'} {label}: {detail}")
-    return 1 if failed else 0
+    return 1 if any(not passed for _, passed, _ in checks) else 0
 
 
 def command_init(args: argparse.Namespace) -> int:
@@ -453,25 +577,36 @@ def command_init(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(prog="ai-native")
-    parser.add_argument("--version", action="version", version="ai-native-platform 0.1.0")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ai-native-platform {__version__}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     validate_parser = subparsers.add_parser(
-        "validate", help="Validate a repository manifest and evidence"
+        "validate",
+        help="Validate a repository manifest and evidence",
     )
     validate_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
     validate_parser.add_argument("--root")
+    validate_parser.add_argument("--format", choices=("text", "json", "sarif"), default="text")
     validate_parser.add_argument("--json", action="store_true")
+    validate_parser.add_argument("--output")
     validate_parser.set_defaults(handler=command_validate)
 
-    score_parser = subparsers.add_parser("score", help="Report a deterministic conformance score")
+    score_parser = subparsers.add_parser(
+        "score",
+        help="Report a deterministic conformance score",
+    )
     score_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
     score_parser.add_argument("--root")
     score_parser.add_argument("--json", action="store_true")
     score_parser.set_defaults(handler=command_score)
 
     doctor_parser = subparsers.add_parser(
-        "doctor", help="Check installation and repository readiness"
+        "doctor",
+        help="Check installation and repository readiness",
     )
     doctor_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
     doctor_parser.add_argument("--root")
@@ -482,6 +617,15 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--force", action="store_true")
     init_parser.set_defaults(handler=command_init)
 
+    upgrade_parser = subparsers.add_parser(
+        "upgrade",
+        help="Upgrade a legacy manifest to the current contract",
+    )
+    upgrade_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
+    upgrade_parser.add_argument("--output")
+    upgrade_parser.add_argument("--dry-run", action="store_true")
+    upgrade_parser.add_argument("--diff", action="store_true")
+    upgrade_parser.set_defaults(handler=command_upgrade)
     return parser
 
 

@@ -1,25 +1,27 @@
 # Changelog
 
-All notable changes are documented here. The project follows semantic versioning.
+All notable changes are documented here.
 
-## Unreleased
+## [0.1.0] - 2026-08-06
 
 ### Added
 
-- Profile-based AI-native product contract.
-- JSON Schema draft 2020-12 enforcement.
-- Evidence declarations linked to repository paths.
-- `ai-native` CLI with `init`, `validate`, `score`, and `doctor` commands.
-- Canonical self-validation, tests, templates, governance, and CI foundations.
+- Profile-aware manifest contract and evidence-backed validator.
+- Installable `ai-native` CLI.
+- JSON and SARIF conformance output.
+- Deterministic legacy-manifest migration with dry-run and diff.
+- Passing and failing repository fixtures for all six profiles.
+- Dedicated private consumer repository fixture.
+- Bounded evidence-driven self-improvement with redaction, suppression, fingerprinting, and issue budgets.
+- SHA-256 checksums, SPDX SBOM, SLSA-compatible provenance inputs, and GitHub build attestations.
+- Immutable tag-driven release workflow.
 
-### Fixed
+### Security
 
-- Aligned the canonical and consumer self-improvement workflow name.
-- Corrected the GitHub issue form syntax.
-- Removed dependency on nonexistent custom labels.
-- Added private-repository token support to the reusable workflow.
-- Upgraded CodeQL to v4 and retained SARIF artifacts when GitHub code scanning is unavailable.
+- Local-only credential contract and credential fixture.
+- CodeQL v4 analysis with retained SARIF.
+- Secret redaction for normalized improvement signals.
 
-## 0.1.0 - Pending
+### Distribution
 
-Initial prerelease once the roadmap pull request passes review and consumer smoke tests.
+- `v0.1.0` uses private distribution and exact version pinning.
