@@ -80,8 +80,24 @@ jobs:
           python -m build
           python tools/release_artifacts.py dist
           (cd dist && sha256sum --check SHA256SUMS)
-      - name: Attest release artifacts
-        if: steps.state.outputs.publish == 'true'
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          dist = Path('dist')
+          provenance = json.loads((dist / 'provenance.json').read_text(encoding='utf-8'))
+          subjects = {item['name']: item['digest']['sha256'] for item in provenance['subject']}
+          for artifact in sorted((*dist.glob('*.whl'), *dist.glob('*.tar.gz'))):
+              digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+              if subjects.get(artifact.name) != digest:
+                  raise SystemExit(f'Provenance digest mismatch: {artifact.name}')
+          sbom = json.loads((dist / 'sbom.spdx.json').read_text(encoding='utf-8'))
+          if sbom.get('spdxVersion') != 'SPDX-2.3':
+              raise SystemExit('Invalid SPDX SBOM')
+          PY
+      - name: Publish GitHub build attestations when supported
+        if: steps.state.outputs.publish == 'true' && github.event.repository.private == false
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: |
