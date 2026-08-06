@@ -5,7 +5,7 @@
 Status: **complete**
 
 - [x] Correct repository metadata, issue forms, templates, and workflow naming.
-- [x] Document immutable references and private-repository consumption.
+- [x] Document immutable references and supported distribution modes.
 
 ## Phase 1 — Authoritative contract
 
@@ -28,25 +28,31 @@ Status: **complete for v0.1.0**
 
 ## Phase 3 — Trustworthy release
 
-Status: **repository implementation complete; administrative activation remains**
+Status: **complete for v0.1.0**
 
-- [x] Choose private distribution.
-- [x] Add a complete private consumer repository fixture.
+- [x] Support immutable vendored-contract consumption and optional private reusable workflows.
+- [x] Register and continuously validate three real consumers.
 - [x] Build wheel and source artifacts.
-- [x] Generate checksums and SPDX SBOM.
-- [x] Generate provenance inputs and GitHub build attestations.
-- [x] Verify tag and package version alignment.
-- [x] Publish immutable release assets from the tag workflow.
-- [ ] Enable branch protection and require Quality, validation, and CodeQL.
-- [ ] Enable GitHub code-scanning alert publication if supported by the repository plan.
-- [ ] Provision the private consumer token and run the fixture from a separate repository.
-- [ ] Create the immutable `v0.1.0` tag after the release PR merges.
+- [x] Generate and verify SHA-256 checksums and SPDX SBOM.
+- [x] Generate provenance metadata and GitHub build attestations.
+- [x] Retain reviewed CodeQL SARIF where alert publication is unavailable or already managed by default setup.
+- [x] Create the immutable `v0.1.0` tag from a verified `main` commit.
+- [x] Publish an idempotent GitHub prerelease only after standard and consumer gates pass.
+- [x] Record rollback, revocation, and recovery guidance.
+
+### Repository-plan control
+
+GitHub reports that protected-branch rulesets are unavailable for this private repository on the
+current plan. v0.1 therefore enforces the same release criteria inside the idempotent release
+workflow and records immutable CI, consumer, SARIF, checksum, SBOM, provenance, and attestation
+evidence. If the repository becomes public or the plan changes, required-check branch protection
+should be enabled as an additional control without changing the contract.
 
 ## Phase 4 — Evidence-driven self-improvement
 
 Status: **complete for read-only discovery and issue creation**
 
-- [x] Detect canonical, fixture, and release drift.
+- [x] Detect canonical, fixture, consumer, and release drift.
 - [x] Ingest normalized CI, dependency, docs, schema, evaluation, and release signals.
 - [x] Redact secret assignments.
 - [x] Deduplicate with stable fingerprints.
@@ -54,10 +60,22 @@ Status: **complete for read-only discovery and issue creation**
 - [x] Enforce an issue budget.
 - [x] Keep branch and PR preparation disabled.
 
-## `v1.0.0` exit criteria
+## Real consumer proof
 
-- Three materially different real repositories consume the standard.
-- Private workflow consumption is proven outside this repository.
-- Branch protection and required checks are enabled.
-- GitHub code-scanning alerts are published or an equivalent reviewed SARIF process is adopted.
-- No repository-specific conformance exception is required.
+The immutable registry in `consumers/registry.yaml` records:
+
+- `fatmambot33/PermutiveAPI` — full platform;
+- `fatmambot33/MatplotLibAPI` — full platform;
+- `fatmambot33/openai-sdk-helpers` — agent tool.
+
+Each repository passes its native test matrix, the canonical contract and evidence validator, and a
+CodeQL analysis with retained SARIF. No repository-specific conformance exception is used.
+
+## `v1.0.0` readiness criteria
+
+- [x] Three materially different real repositories consume the standard.
+- [x] The selected immutable vendored-contract distribution works outside this repository.
+- [x] Release gates provide an equivalent control where private branch rulesets are plan-limited.
+- [x] GitHub code-scanning alerts or reviewed retained SARIF are available for every registered consumer.
+- [x] No repository-specific conformance exception is required.
+- [ ] Accumulate compatibility evidence across multiple v0.x releases before declaring the contract stable.

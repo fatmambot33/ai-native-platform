@@ -1,13 +1,27 @@
-# Private distribution
+# Distribution
 
-The supported `v0.1.0` distribution mode is private.
+`v0.1.0` supports two immutable distribution modes.
 
-Consumer repositories require read access to this repository and a fine-grained read-only token
-stored as `AI_NATIVE_PLATFORM_TOKEN`. The token must never be committed, echoed, or passed to
-untrusted pull-request code.
+## Vendored contract snapshot
 
-Repository Actions access must explicitly permit the consumer repository. Consumers pin `v0.1.0`
-or an immutable commit SHA.
+This is the proven mode used by the registered real consumers. A consumer pins an immutable
+standard commit, vendors that commit's JSON Schema, and runs the repository-evidence validator in
+its own CI. The central `consumers/registry.yaml` pins each consumer commit and continuously
+revalidates it with the packaged `ai-native` CLI.
 
-Rollback consists of pinning the last trusted release. Revocation consists of deleting or rotating
-the consumer token and removing the consumer from repository Actions access.
+This mode requires no cross-repository secret and works for public consumers while the standards
+repository remains private.
+
+## Private reusable workflow
+
+Repositories granted private Actions access may instead call the reusable workflow and pass a
+fine-grained read-only token stored as `AI_NATIVE_PLATFORM_TOKEN`. The token must never be committed,
+echoed, or exposed to untrusted pull-request code.
+
+Consumers must pin `v0.1.0` or an immutable commit SHA. Never use `@main` in production.
+
+## Rollback and revocation
+
+Rollback consists of pinning the last trusted release or contract commit. For private reusable
+workflow access, revoke or rotate the token and remove repository Actions access. For vendored
+contracts, revert the consumer pull request or pin the previous immutable schema snapshot.

@@ -8,7 +8,7 @@ The repository provides:
 2. profile-aware conformance rules;
 3. an installable CLI and reusable CI gate;
 4. governed, evidence-driven continuous improvement;
-5. reproducible release metadata, SBOM, and provenance.
+5. reproducible release metadata, SBOM, provenance, and real-consumer verification.
 
 ## Profiles
 
@@ -61,14 +61,18 @@ ai-native upgrade AI_NATIVE_PLATFORM.yaml
 
 The migration command never silently downgrades a future manifest version.
 
-## Private distribution
+## Distribution
 
-`v0.1.0` uses a **private distribution model**. Consumers must:
+### Immutable vendored contract
 
-1. grant the consumer repository access to this private Actions workflow;
-2. create a fine-grained token with read-only contents access to this repository;
-3. store it as `AI_NATIVE_PLATFORM_TOKEN`;
-4. pin the exact immutable release.
+This is the proven default. A consumer pins an immutable standard commit, vendors that commit's
+schema, and validates its manifest and repository evidence locally. The standard repository keeps an
+immutable registry and continuously revalidates every registered consumer.
+
+### Private reusable workflow
+
+Repositories with private Actions access may call the reusable workflow using a fine-grained
+read-only token stored as `AI_NATIVE_PLATFORM_TOKEN`:
 
 ```yaml
 jobs:
@@ -80,15 +84,25 @@ jobs:
       standard_token: ${{ secrets.AI_NATIVE_PLATFORM_TOKEN }}
 ```
 
-Never use `@main` in a production consumer. A complete consumer repository fixture is in
-`fixtures/consumer-repository/`.
+Never use `@main` in a production consumer. See `docs/DISTRIBUTION.md`.
+
+## Real consumers
+
+`consumers/registry.yaml` pins and continuously validates:
+
+- `fatmambot33/PermutiveAPI` — full platform;
+- `fatmambot33/MatplotLibAPI` — full platform;
+- `fatmambot33/openai-sdk-helpers` — agent tool.
+
+Every registered commit passes the canonical contract without repository-specific exceptions, its
+native repository CI, and CodeQL analysis with retained SARIF.
 
 ## Evidence-driven self-improvement
 
 The scheduled workflow:
 
 - validates the canonical repository;
-- detects fixture and release drift;
+- detects fixture, consumer, and release drift;
 - ingests normalized CI, dependency, documentation, schema, evaluation, and release signals;
 - redacts common secret assignments;
 - suppresses reviewed false positives;
@@ -101,33 +115,36 @@ External normalized signals belong in `.ai-native/signals.json`. See
 
 ## Release integrity
 
-The quality gate builds the package and verifies:
+A verified `main` run must pass:
 
-- wheel and source distribution;
-- SHA-256 checksums;
-- SPDX 2.3 SBOM;
-- SLSA-compatible provenance statement inputs;
-- clean wheel installation;
-- SARIF output.
+- all registered consumer validations;
+- Ruff, tests, and canonical validation;
+- clean evidence-driven discovery;
+- wheel and source builds;
+- SHA-256 checksum verification;
+- SPDX 2.3 SBOM generation;
+- provenance metadata and GitHub build attestations.
 
-A `v*.*.*` tag additionally creates GitHub build-provenance attestations and publishes an
-immutable GitHub release. See `docs/RELEASE.md`.
+The idempotent release workflow creates the immutable semantic tag and GitHub prerelease only after
+those gates pass. Later `main` changes cannot move the tag or replace release assets. See
+`docs/RELEASE.md`.
 
-## Repository administration
+## Repository-plan control
 
-The code defines the required checks: `Quality`, `Validate AI-native platform`, and `CodeQL`.
-Repository administrators must enable branch protection with these checks and enable GitHub code
-scanning if alert publication is desired. CodeQL analysis remains effective without alert
-publication because SARIF is retained as an artifact.
+GitHub reports that protected-branch rulesets are unavailable for this private repository on the
+current plan. The v0.1 release workflow therefore duplicates and records all required release checks
+as an equivalent control. If the repository becomes public or the plan changes, required-check
+branch protection should be enabled as an additional control.
 
 ## Repository structure
 
 - `schemas/ai-native-platform.schema.json` — product contract
 - `standard/AI_NATIVE_PLATFORM.yaml` — standard identity and release gates
 - `ai_native.py` — validator, migration library, SARIF, and CLI
-- `fixtures/` — passing, failing, and consumer repositories
+- `fixtures/` — passing, failing, and consumer fixtures
+- `consumers/registry.yaml` — immutable real-consumer proof
 - `tools/improvement_engine.py` — bounded discovery
 - `tools/release_artifacts.py` — checksums, SBOM, and provenance metadata
 - `templates/` — starter manifest, workflow, and agent instructions
-- `ROADMAP.md` — execution and remaining administrative gates
+- `ROADMAP.md` — execution status and stability criteria
 - `docs/GOVERNANCE.md` — autonomy and approval policy

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 
 import yaml
 from jsonschema import Draft202012Validator
 
 from ai_native import load_schema
 from validator.validate_standard import ROOT, validate_standard
+
+IMMUTABLE_SHA = re.compile(r"[0-9a-f]{40}")
 
 
 def test_canonical_standard_passes() -> None:
@@ -33,3 +36,50 @@ def test_schema_json_is_stably_formatted() -> None:
     path = ROOT / "schemas/ai-native-platform.schema.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     assert path.read_text(encoding="utf-8") == json.dumps(data, indent=2) + "\n"
+
+
+def test_real_consumer_registry_is_immutable_and_diverse() -> None:
+    registry = yaml.safe_load(
+        (ROOT / "consumers/registry.yaml").read_text(encoding="utf-8")
+    )
+    consumers = registry["consumers"]
+    assert IMMUTABLE_SHA.fullmatch(registry["standard_ref"])
+    assert len(consumers) >= 3
+    assert len({consumer["repository"] for consumer in consumers}) == len(consumers)
+    assert {consumer["profile"] for consumer in consumers} >= {
+        "agent-tool",
+        "full-platform",
+    }
+    for consumer in consumers:
+        assert IMMUTABLE_SHA.fullmatch(consumer["ref"])
+        assert consumer["manifest"] == "AI_NATIVE_PLATFORM.yaml"
+
+
+def test_consumer_workflow_validates_registry_entries() -> None:
+    workflow = (ROOT / ".github/workflows/consumer-conformance.yml").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "consumers/registry.yaml",
+        "ai-native validate",
+        "matrix.repository",
+        "matrix.ref",
+        "EXPECTED_STANDARD_REF",
+        "workflow_call",
+    ):
+        assert token in workflow
+
+
+def test_release_workflow_is_idempotent_attested_and_prerelease() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    for token in (
+        "uses: ./.github/workflows/consumer-conformance.yml",
+        "gh release view",
+        "actions/attest-build-provenance@v3",
+        "python tools/release_artifacts.py dist",
+        "git tag -a",
+        "gh release create",
+        "--prerelease",
+        "--verify-tag",
+    ):
+        assert token in workflow
