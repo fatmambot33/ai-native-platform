@@ -12,5 +12,5 @@ Highlights:
 - continuously verified immutable vendored-contract distribution;
 - optional private reusable workflow distribution;
 - bounded, secret-redacting self-improvement;
-- checksums, SPDX SBOM, provenance metadata, and GitHub build attestations;
+- checksums, SPDX SBOM, verified SLSA-compatible provenance, and GitHub-hosted attestations when supported;
 - idempotent immutable tag and prerelease publication from a verified `main` commit.
