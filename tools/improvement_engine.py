@@ -6,12 +6,12 @@ import hashlib
 import json
 import re
 import sys
-import tomllib
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import tomli as tomllib
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -126,10 +126,9 @@ def _release_alignment_findings(root: Path) -> list[ImprovementFinding]:
 def _fixture_findings(root: Path) -> list[ImprovementFinding]:
     """Validate every passing and failing profile fixture."""
     findings: list[ImprovementFinding] = []
-    fixture_root = root / "fixtures"
     for profile in PROFILES:
-        passing = fixture_root / "passing" / f"{profile}.yaml"
-        failing = fixture_root / "failing" / f"{profile}.yaml"
+        passing = root / "fixtures" / "passing" / f"{profile}.yaml"
+        failing = root / "fixtures" / "failing" / f"{profile}.yaml"
         if not passing.is_file() or not failing.is_file():
             findings.append(
                 make_finding(
@@ -141,6 +140,7 @@ def _fixture_findings(root: Path) -> list[ImprovementFinding]:
                 )
             )
             continue
+        fixture_root = root / "fixtures"
         _, passing_findings = validate_manifest(passing, fixture_root)
         _, failing_findings = validate_manifest(failing, fixture_root)
         if passing_findings:
