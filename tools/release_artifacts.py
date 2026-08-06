@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import tomli as tomllib
 
 
 def sha256(path: Path) -> str:
