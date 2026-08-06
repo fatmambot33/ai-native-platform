@@ -79,7 +79,7 @@ jobs:
         run: |
           python -m build
           python tools/release_artifacts.py dist
-          sha256sum --check dist/SHA256SUMS
+          (cd dist && sha256sum --check SHA256SUMS)
       - name: Attest release artifacts
         if: steps.state.outputs.publish == 'true'
         uses: actions/attest-build-provenance@v3
