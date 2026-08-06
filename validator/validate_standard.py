@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ai_native import (  # noqa: E402
-    Finding,
+from ai_native import (  # noqa: E402, I001
     STANDARD_REPOSITORY,
+    Finding,
     contract_findings,
     load_mapping,
     load_schema,
