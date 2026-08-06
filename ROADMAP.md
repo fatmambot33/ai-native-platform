@@ -34,19 +34,21 @@ Status: **complete for v0.1.0**
 - [x] Register and continuously validate three real consumers.
 - [x] Build wheel and source artifacts.
 - [x] Generate and verify SHA-256 checksums and SPDX SBOM.
-- [x] Generate provenance metadata and GitHub build attestations.
+- [x] Generate SLSA-compatible provenance and verify artifact subject digests before publication.
+- [x] Publish GitHub-hosted attestations automatically when repository visibility and plan support them.
 - [x] Retain reviewed CodeQL SARIF where alert publication is unavailable or already managed by default setup.
 - [x] Create the immutable `v0.1.0` tag from a verified `main` commit.
 - [x] Publish an idempotent GitHub prerelease only after standard and consumer gates pass.
 - [x] Record rollback, revocation, and recovery guidance.
 
-### Repository-plan control
+### Repository-plan controls
 
 GitHub reports that protected-branch rulesets are unavailable for this private repository on the
-current plan. v0.1 therefore enforces the same release criteria inside the idempotent release
-workflow and records immutable CI, consumer, SARIF, checksum, SBOM, provenance, and attestation
-evidence. If the repository becomes public or the plan changes, required-check branch protection
-should be enabled as an additional control without changing the contract.
+current plan. GitHub also reports that hosted attestations are unavailable for user-owned private
+repositories. v0.1 therefore enforces the release criteria inside the idempotent release workflow
+and publishes independently verifiable checksums, SPDX SBOM, and SLSA-compatible provenance as
+release assets. If visibility or plan capabilities change, branch protection and hosted attestations
+activate as additional controls without changing the contract.
 
 ## Phase 4 — Evidence-driven self-improvement
 
