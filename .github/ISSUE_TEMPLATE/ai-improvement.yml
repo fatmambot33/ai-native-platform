@@ -1,6 +1,7 @@
 name: AI improvement
-about: Propose a scoped improvement ready for an AI coding agent
-labels: [ai-improvement, triage]
+description: Propose a scoped, evidence-backed improvement ready for an AI coding agent.
+title: "[AI improvement] "
+labels: [enhancement]
 body:
   - type: textarea
     id: problem
@@ -20,6 +21,7 @@ body:
     id: outcome
     attributes:
       label: Desired outcome
+      description: Describe the observable result rather than the implementation preference.
     validations:
       required: true
   - type: textarea
@@ -31,7 +33,7 @@ body:
         - [ ] Implementation is complete
         - [ ] Tests cover the change
         - [ ] Documentation and examples are updated
-        - [ ] AI_NATIVE_PLATFORM.yaml remains valid
+        - [ ] The canonical standard remains valid
         - [ ] CHANGELOG and ROADMAP are updated when applicable
     validations:
       required: true
@@ -45,6 +47,7 @@ body:
         - Breaking change
         - Security
         - Credentials
+        - Permissions
         - Release
     validations:
       required: true

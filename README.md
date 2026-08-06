@@ -1,57 +1,110 @@
 # AI Native Platform
 
-Canonical, self-hosting standard for first-class AI-native products.
+A canonical, evidence-backed standard for building first-class AI-native products and repositories.
 
-This repository defines the contract that product repositories consume. It standardizes plugin packaging, local credential handling, agent interfaces, quality gates, GitHub issue-driven self-improvement, and governance.
+The repository provides four things:
 
-## Core principles
+1. a versioned product manifest contract;
+2. profile-aware conformance rules;
+3. a reusable validator and CLI;
+4. governed, issue-driven continuous improvement.
 
-- Plugin-first and agent-discoverable
-- Local credentials only
-- Typed, structured, deterministic interfaces
-- GitHub Issues as the improvement work queue
-- Agents may discover, plan, implement, test, and open pull requests
-- Human approval remains mandatory for breaking, security, credential, public API, and release-impacting changes
-- Every requirement is machine-validatable
+## Design principles
 
-## Consumer setup
+- **Schema first:** product declarations are validated with JSON Schema draft 2020-12.
+- **Evidence backed:** every declared capability points to concrete repository evidence.
+- **Profile aware:** libraries, CLIs, services, agent tools, plugins, and full platforms have different required surfaces.
+- **Deterministic:** tools, inputs, outputs, errors, versions, and discovery remain machine-readable.
+- **Safe by default:** credentials remain local and high-impact changes require human approval.
+- **Single contract:** humans, CI, agents, SDKs, and plugins consume the same manifest.
 
-A product repository keeps a local `AI_NATIVE_PLATFORM.yaml` that references this standard and declares product-specific capabilities.
+## Profiles
 
-```yaml
-version: 1
-standard:
-  repository: fatmambot33/ai-native-platform
-  ref: v1
-product:
-  name: example-product
-```
+Choose the smallest profile matching the product:
 
-Validate locally:
+| Profile | Required surface |
+|---|---|
+| `library` | SDK and JSON Schema |
+| `cli` | CLI and JSON Schema |
+| `service` | JSON Schema plus OpenAPI or SDK |
+| `agent-tool` | JSON Schema plus plugin or MCP |
+| `plugin` | Plugin and JSON Schema |
+| `full-platform` | SDK, CLI, plugin, and JSON Schema |
+
+## Install
+
+From a checkout:
 
 ```bash
-python -m pip install pyyaml jsonschema
-python validator/validate.py AI_NATIVE_PLATFORM.yaml
+python -m pip install .
 ```
 
-Use the reusable GitHub Actions workflow:
+For development:
+
+```bash
+python -m pip install -e '.[dev]'
+```
+
+## Quick start
+
+Create a starter manifest:
+
+```bash
+ai-native init
+```
+
+Replace the example values and evidence paths, then validate:
+
+```bash
+ai-native validate AI_NATIVE_PLATFORM.yaml
+ai-native score AI_NATIVE_PLATFORM.yaml
+ai-native doctor AI_NATIVE_PLATFORM.yaml
+```
+
+Machine-readable output is available for validation and scoring:
+
+```bash
+ai-native validate AI_NATIVE_PLATFORM.yaml --json
+```
+
+## Reusable GitHub Actions workflow
+
+After the first release, pin the exact release tag:
 
 ```yaml
 jobs:
-  ai-native-platform:
-    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v1
+  conformance:
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.1.0
+    with:
+      manifest: AI_NATIVE_PLATFORM.yaml
 ```
 
-## Repository contents
+This repository is currently private. A consuming private repository may need to pass a fine-grained token that can read this repository:
 
-- `standard/AI_NATIVE_PLATFORM.yaml`: canonical requirements
-- `schemas/ai-native-platform.schema.json`: machine-readable schema
-- `validator/validate.py`: semantic validator
-- `.github/workflows/validate.yml`: reusable CI gate
-- `.github/workflows/self-improve.yml`: self-hosting improvement discovery
-- `templates/`: issue, manifest, and workflow templates
-- `docs/GOVERNANCE.md`: automation and approval policy
+```yaml
+    secrets:
+      standard_token: ${{ secrets.AI_NATIVE_PLATFORM_TOKEN }}
+```
 
-## Versioning
+Never use `@main` in a production consumer. Pin an exact semantic release or immutable commit SHA.
 
-The standard follows semantic versioning. Consumers should pin a release tag or immutable commit. Breaking contract changes require a major version.
+## Security scanning
+
+CodeQL runs on pull requests, pushes to `main`, and a weekly schedule. While GitHub code scanning is unavailable for this private repository, the workflow retains the generated SARIF as a 14-day workflow artifact instead of failing during upload. Enabling repository code scanning and publishing alerts is a release gate tracked separately.
+
+## Repository structure
+
+- `schemas/ai-native-platform.schema.json` — canonical product contract
+- `standard/AI_NATIVE_PLATFORM.yaml` — standard identity, profiles, principles, and release gates
+- `ai_native.py` — validator library and CLI
+- `validator/` — compatibility entry points and canonical self-validation
+- `templates/` — starter manifest, workflow, and agent instructions
+- `CHECKLIST.md` — comprehensive target-state checklist
+- `ROADMAP.md` — ordered execution plan and completion state
+- `docs/GOVERNANCE.md` — autonomy and approval policy
+
+## Release policy
+
+The project follows semantic versioning. It remains prerelease until consumer fixtures prove that multiple repository profiles validate without repository-specific exceptions.
+
+Breaking contract changes require a major version after `v1.0.0`. Before `v1`, every release must document migrations explicitly.

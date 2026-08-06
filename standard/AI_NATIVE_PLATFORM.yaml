@@ -1,106 +1,43 @@
 version: 1
 standard:
-  name: First Class AI Native Platform
+  name: First-Class AI-Native Platform
   repository: fatmambot33/ai-native-platform
-  lifecycle: self_hosting
+  lifecycle: prerelease
   versioning: semver
+  current_release: 0.1.0
 
-requirements:
-  product:
-    ai_native: true
-    plugin_first: true
-    typed: true
-    structured_outputs: true
-  packaging:
-    pyproject: true
-    pypi_install_documented: true
-    git_install_documented: true
-    editable_install_documented: true
-    build_smoke_test: true
+product_model:
+  contract: schemas/ai-native-platform.schema.json
+  evidence_mode: repository
+  unknown_fields: forbidden
+  extensions_field: extensions
+
+profiles:
+  library:
+    required_interfaces: [sdk, json_schema]
+  cli:
+    required_interfaces: [cli, json_schema]
+  service:
+    required_any_interfaces: [openapi, sdk]
+    required_interfaces: [json_schema]
+  agent-tool:
+    required_any_interfaces: [plugin, mcp]
+    required_interfaces: [json_schema]
   plugin:
-    manifest: true
-    codex_support: true
-    marketplace_support: true
-    typed_contract: true
-    deterministic_discovery: true
-    capability_metadata: true
-    contract_tests: true
-  typing:
-    public_api_typed: true
-    marker_or_explicit_contract: true
-    strict_check_in_ci: true
-    structured_tool_schemas: true
-  credentials:
-    local_only: true
-    env_file: .env
-    env_example: true
-    never_echo: true
-    never_commit: true
-    never_store_remote: true
-    configure_command_when_required: true
-    doctor_command_when_required: true
-  documentation:
-    readme: true
-    installation: true
-    plugin_guide: true
-    sdk_or_api: true
-    examples: true
-    agent_instructions: true
-  interfaces:
-    sdk: true
-    cli: true
-    plugin: true
-    json_schema: true
-    openai_tools: true
-  quality:
-    tests: true
-    typing: true
-    documentation: true
-    examples: true
-    compatibility: true
-    security_scan: true
-    plugin_validation: true
-  self_improvement:
-    enabled: true
-    work_queue: github_issues
-    issue_templates: true
-    scheduled_discovery: true
-    deduplicate_issues: true
-    agent_ready_acceptance_criteria: true
-    agent_can_prepare_pr: true
-    ci_required_before_merge: true
-    roadmap_updates: true
-    changelog_updates: true
-  governance:
-    human_approval_required:
-      - breaking_changes
-      - security_changes
-      - credential_changes
-      - public_api_changes
-      - permission_expansion
-      - release_changes
-    safe_auto_merge_allowed:
-      - documentation
-      - tests
-      - formatting
-      - examples
-      - non_breaking_maintenance
+    required_interfaces: [plugin, json_schema]
+  full-platform:
+    required_interfaces: [sdk, cli, plugin, json_schema]
 
-evidence:
-  mode: repository
-  required:
-    - packaging_metadata
-    - installation_documentation
-    - plugin_manifest
-    - plugin_marketplace
-    - typed_contract
-    - typing_contract
-    - strict_type_check
-    - plugin_tests
-    - general_tests
-    - agent_instructions
-    - self_improvement_workflow
-    - improvement_issue_template
+principles:
+  - schema_first
+  - evidence_backed
+  - deterministic_interfaces
+  - structured_outputs
+  - local_credentials
+  - least_privilege
+  - governed_autonomy
+  - backward_compatible_evolution
+  - single_source_of_truth
 
 required_agent_guarantees:
   - deterministic_tool_discovery
@@ -108,3 +45,27 @@ required_agent_guarantees:
   - issue_driven_improvement
   - ci_validated_changes
   - governed_autonomy
+
+governance:
+  human_approval_required:
+    - breaking_changes
+    - security_changes
+    - credential_changes
+    - public_api_changes
+    - permission_expansion
+    - release_changes
+  safe_auto_merge_allowed:
+    - documentation
+    - tests
+    - formatting
+    - examples
+    - non_breaking_maintenance
+
+release_gates:
+  - schema_valid
+  - semantic_validation_passes
+  - repository_evidence_exists
+  - tests_pass
+  - documentation_current
+  - changelog_current
+  - migration_notes_for_breaking_changes

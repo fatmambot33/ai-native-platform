@@ -2,37 +2,73 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import re
 import sys
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 import yaml
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 
-ROOT = Path(".")
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from ai_native import (  # noqa: E402, I001
+    STANDARD_REPOSITORY,
+    Finding,
+    contract_findings,
+    load_mapping,
+    load_schema,
+)
+
 STANDARD_FILE = ROOT / "standard/AI_NATIVE_PLATFORM.yaml"
-SCHEMA_FILE = ROOT / "schemas/ai-native-platform.schema.json"
 CHECKLIST_FILE = ROOT / "CHECKLIST.md"
-STANDARD_REPOSITORY = "fatmambot33/ai-native-platform"
+TEMPLATE_FILE = ROOT / "templates/AI_NATIVE_PLATFORM.yaml"
+ISSUE_FORM = ROOT / ".github/ISSUE_TEMPLATE/ai-improvement.yml"
 
 REQUIRED_FILES = (
-    Path("README.md"),
-    Path("CHECKLIST.md"),
-    Path("standard/AI_NATIVE_PLATFORM.yaml"),
-    Path("schemas/ai-native-platform.schema.json"),
-    Path("validator/validate.py"),
-    Path("validator/validate_standard.py"),
-    Path("docs/GOVERNANCE.md"),
-    Path(".github/ISSUE_TEMPLATE/ai-improvement.yml"),
-    Path(".github/workflows/self-improve.yml"),
+    "README.md",
+    "CHECKLIST.md",
+    "ROADMAP.md",
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "pyproject.toml",
+    "ai_native.py",
+    "standard/AI_NATIVE_PLATFORM.yaml",
+    "schemas/ai-native-platform.schema.json",
+    "validator/validate.py",
+    "validator/validate_standard.py",
+    "templates/AI_NATIVE_PLATFORM.yaml",
+    "templates/validate.yml",
+    "templates/AGENTS.md",
+    "docs/GOVERNANCE.md",
+    "tests/test_validation.py",
+    "tests/test_standard.py",
+    ".github/ISSUE_TEMPLATE/ai-improvement.yml",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/CODEOWNERS",
+    ".github/dependabot.yml",
+    ".github/workflows/validate.yml",
+    ".github/workflows/quality.yml",
+    ".github/workflows/codeql.yml",
+    ".github/workflows/self-improve.yml",
 )
 
 REQUIRED_CHECKLIST_HEADINGS = (
     "## Vision & Product",
     "## AI Contracts",
+    "## Plugin Surface",
     "## Agent Readiness",
     "## SDKs",
     "## APIs",
+    "## Typing & Schemas",
+    "## Installation & Configuration",
     "## Documentation",
     "## Developer Experience",
     "## Reliability",
@@ -49,137 +85,208 @@ REQUIRED_CHECKLIST_HEADINGS = (
     "## Definition of Done",
 )
 
-REQUIRED_AGENT_GUARANTEES = {
-    "deterministic_tool_discovery",
-    "structured_outputs",
-    "issue_driven_improvement",
-    "ci_validated_changes",
-    "governed_autonomy",
-}
+EXPECTED_PROFILES = {"library", "cli", "service", "agent-tool", "plugin", "full-platform"}
 
 
-def _read_mapping(path: Path) -> dict[str, Any]:
-    """Read one YAML mapping."""
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"{path} must contain a mapping")
-    return data
-
-
-def validate_standard() -> list[str]:
-    """Return canonical standard validation errors."""
-    errors: list[str] = []
+def validate_standard(root: Path = ROOT) -> list[Finding]:
+    """Return canonical standard validation findings."""
+    findings: list[Finding] = []
 
     for relative in REQUIRED_FILES:
-        if not (ROOT / relative).is_file():
-            errors.append(f"missing canonical file: {relative}")
+        if not (root / relative).exists():
+            findings.append(
+                Finding(
+                    "standard.file_missing",
+                    "Required canonical file is missing.",
+                    relative,
+                )
+            )
 
-    if errors:
-        return errors
+    if findings:
+        return findings
 
-    standard = _read_mapping(STANDARD_FILE)
+    standard = load_mapping(root / "standard/AI_NATIVE_PLATFORM.yaml")
     if standard.get("version") != 1:
-        errors.append("standard version must be 1")
+        findings.append(
+            Finding("standard.version_invalid", "Standard version must be 1.", "version")
+        )
 
     identity = standard.get("standard", {})
     if not isinstance(identity, dict):
-        errors.append("standard.standard must be a mapping")
+        findings.append(
+            Finding("standard.identity_invalid", "standard must be a mapping.", "standard")
+        )
     else:
         if identity.get("repository") != STANDARD_REPOSITORY:
-            errors.append(f"standard.repository must be {STANDARD_REPOSITORY}")
+            findings.append(
+                Finding(
+                    "standard.repository_invalid",
+                    f"Repository must be {STANDARD_REPOSITORY}.",
+                    "standard.repository",
+                )
+            )
         if identity.get("versioning") != "semver":
-            errors.append("standard.versioning must be semver")
+            findings.append(
+                Finding(
+                    "standard.versioning_invalid",
+                    "Versioning must be semver.",
+                    "standard.versioning",
+                )
+            )
+        release = str(identity.get("current_release", ""))
+        if re.fullmatch(r"\d+\.\d+\.\d+", release) is None:
+            findings.append(
+                Finding(
+                    "standard.release_invalid",
+                    "current_release must be an exact semantic version.",
+                    "standard.current_release",
+                )
+            )
 
-    requirements = standard.get("requirements", {})
-    if not isinstance(requirements, dict):
-        errors.append("requirements must be a mapping")
+    profiles = standard.get("profiles", {})
+    if not isinstance(profiles, dict):
+        findings.append(
+            Finding("standard.profiles_invalid", "profiles must be a mapping.", "profiles")
+        )
     else:
-        for section in (
-            "product",
-            "plugin",
-            "credentials",
-            "interfaces",
-            "quality",
-            "self_improvement",
-            "governance",
-        ):
-            if not isinstance(requirements.get(section), dict):
-                errors.append(f"requirements.{section} must be a mapping")
+        missing_profiles = EXPECTED_PROFILES - set(profiles)
+        for profile in sorted(missing_profiles):
+            findings.append(
+                Finding(
+                    "standard.profile_missing",
+                    f"Required profile {profile!r} is missing.",
+                    "profiles",
+                )
+            )
 
-        product = requirements.get("product", {})
-        for key in ("ai_native", "plugin_first", "typed", "structured_outputs"):
-            if product.get(key) is not True:
-                errors.append(f"requirements.product.{key} must be true")
-
-        plugin = requirements.get("plugin", {})
-        for key in (
-            "manifest",
-            "codex_support",
-            "marketplace_support",
-            "deterministic_discovery",
-            "capability_metadata",
-        ):
-            if plugin.get(key) is not True:
-                errors.append(f"requirements.plugin.{key} must be true")
-
-    guarantees = set(standard.get("required_agent_guarantees", []))
-    missing_guarantees = REQUIRED_AGENT_GUARANTEES - guarantees
-    if missing_guarantees:
-        errors.append(
-            "missing required agent guarantees: "
-            + ", ".join(sorted(missing_guarantees))
+    try:
+        schema = load_schema()
+        Draft202012Validator.check_schema(schema)
+    except (OSError, ValueError, json.JSONDecodeError, SchemaError) as exc:
+        findings.append(
+            Finding(
+                "standard.schema_invalid",
+                str(exc),
+                "schemas/ai-native-platform.schema.json",
+            )
         )
 
-    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
-    if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
-        errors.append("manifest schema must use JSON Schema draft 2020-12")
-    required_manifest_fields = {
-        "version",
-        "standard",
-        "product",
-        "plugin",
-        "interfaces",
-        "quality",
-        "release",
-        "agent",
-        "self_improvement",
-    }
-    missing_schema_fields = required_manifest_fields - set(schema.get("required", []))
-    if missing_schema_fields:
-        errors.append(
-            "manifest schema missing required fields: "
-            + ", ".join(sorted(missing_schema_fields))
+    template = load_mapping(root / "templates/AI_NATIVE_PLATFORM.yaml")
+    for finding in contract_findings(template):
+        findings.append(
+            Finding(
+                "standard.template_invalid",
+                finding.render(),
+                "templates/AI_NATIVE_PLATFORM.yaml",
+            )
         )
 
-    checklist = CHECKLIST_FILE.read_text(encoding="utf-8")
+    checklist = (root / "CHECKLIST.md").read_text(encoding="utf-8")
     for heading in REQUIRED_CHECKLIST_HEADINGS:
         if heading not in checklist:
-            errors.append(f"checklist missing heading: {heading}")
+            findings.append(Finding("standard.checklist_heading_missing", heading, "CHECKLIST.md"))
+    if "Every capability is defined once" not in checklist:
+        findings.append(
+            Finding(
+                "standard.definition_incomplete",
+                "Definition of Done must require one canonical capability definition.",
+                "CHECKLIST.md",
+            )
+        )
 
-    definition = checklist.split("## Definition of Done", maxsplit=1)
-    if len(definition) != 2 or "Every capability is defined once" not in definition[1]:
-        errors.append("checklist Definition of Done is incomplete")
+    issue_form = yaml.safe_load(
+        (root / ".github/ISSUE_TEMPLATE/ai-improvement.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    if not isinstance(issue_form, dict):
+        findings.append(
+            Finding(
+                "standard.issue_form_invalid",
+                "Issue form must be a mapping.",
+                str(ISSUE_FORM),
+            )
+        )
+    else:
+        for key in ("name", "description", "body"):
+            if not issue_form.get(key):
+                findings.append(
+                    Finding(
+                        "standard.issue_form_key_missing",
+                        f"Issue form requires {key!r}.",
+                        str(ISSUE_FORM),
+                    )
+                )
+        if "about" in issue_form:
+            findings.append(
+                Finding(
+                    "standard.issue_form_legacy_key",
+                    "YAML issue forms use description, not about.",
+                    str(ISSUE_FORM),
+                )
+            )
+        labels = issue_form.get("labels", [])
+        if labels != ["enhancement"]:
+            findings.append(
+                Finding(
+                    "standard.issue_form_label_invalid",
+                    "Use the built-in enhancement label until managed labels are provisioned.",
+                    str(ISSUE_FORM),
+                )
+            )
 
-    return errors
+    validator_source = (root / "ai_native.py").read_text(encoding="utf-8")
+    if "Draft202012Validator" not in validator_source:
+        findings.append(
+            Finding(
+                "standard.schema_not_enforced",
+                "The product validator must execute JSON Schema validation.",
+                "ai_native.py",
+            )
+        )
+
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    if re.search(r"uses:\s+[^\s]+@main(?:\s|$)", readme):
+        findings.append(
+            Finding(
+                "standard.floating_reference",
+                "Production documentation must not recommend @main.",
+                "README.md",
+            )
+        )
+
+    return _deduplicate(findings)
 
 
-def main() -> int:
-    """Run canonical standard self-validation."""
+def _deduplicate(findings: list[Finding]) -> list[Finding]:
+    """Return stable unique findings."""
+    unique: dict[tuple[str, str, str | None], Finding] = {}
+    for finding in findings:
+        unique[(finding.code, finding.message, finding.path)] = finding
+    return list(unique.values())
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run canonical self-validation."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
     try:
-        errors = validate_standard()
-    except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
-        print(f"Canonical AI-native standard validation failed: {exc}")
-        return 1
+        findings = validate_standard()
+    except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError, SchemaError) as exc:
+        findings = [Finding("standard.validator_error", str(exc))]
 
-    if errors:
+    if args.json:
+        print(json.dumps([asdict(finding) for finding in findings], indent=2, sort_keys=True))
+    elif findings:
         print("Canonical AI-native standard validation failed:")
-        for error in errors:
-            print(f"- {error}")
-        return 1
-
-    print("Canonical AI-native standard validation passed.")
-    return 0
+        for finding in findings:
+            print(f"- {finding.render()}")
+    else:
+        print("Canonical AI-native standard validation passed.")
+    return 1 if findings else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
