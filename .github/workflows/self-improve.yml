@@ -31,7 +31,7 @@ jobs:
       - name: Produce bounded structured findings
         run: python tools/discover_improvements.py > findings.json
       - name: Create one issue per root cause
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
