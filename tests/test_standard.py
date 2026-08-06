@@ -70,13 +70,16 @@ def test_consumer_workflow_validates_registry_entries() -> None:
         assert token in workflow
 
 
-def test_release_workflow_is_idempotent_attested_and_prerelease() -> None:
+def test_release_workflow_is_idempotent_verifiable_and_prerelease() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     for token in (
         "uses: ./.github/workflows/consumer-conformance.yml",
         "gh release view",
-        "actions/attest-build-provenance@v3",
         "python tools/release_artifacts.py dist",
+        "Provenance digest mismatch",
+        "spdxVersion",
+        "github.event.repository.private == false",
+        "actions/attest-build-provenance@v3",
         "git tag -a",
         "gh release create",
         "--prerelease",
