@@ -1,0 +1,14 @@
+standard_ref: 585484a227741a9eac78393e631b9d3794b85ec8
+consumers:
+  - repository: fatmambot33/PermutiveAPI
+    ref: 8e209a27e07491d52467562797453e9045214eb8
+    profile: full-platform
+    manifest: AI_NATIVE_PLATFORM.yaml
+  - repository: fatmambot33/MatplotLibAPI
+    ref: 148e3d24cb96bb3f77d95820ebf23ece47d83c13
+    profile: full-platform
+    manifest: AI_NATIVE_PLATFORM.yaml
+  - repository: fatmambot33/openai-sdk-helpers
+    ref: c5487da5c31c6481f4c51d61101174164fb8b136
+    profile: agent-tool
+    manifest: AI_NATIVE_PLATFORM.yaml
