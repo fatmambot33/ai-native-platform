@@ -6,10 +6,10 @@ import argparse
 import json
 import re
 import sys
-import tomllib
 from dataclasses import asdict
 from pathlib import Path
 
+import tomli as tomllib
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
