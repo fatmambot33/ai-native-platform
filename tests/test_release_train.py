@@ -82,7 +82,7 @@ def test_upgrade_unversioned_manifest() -> None:
     }
     upgraded = migrate_manifest(legacy)
     assert upgraded["version"] == CURRENT_MANIFEST_VERSION
-    assert upgraded["standard"]["ref"] == "v0.1.0"
+    assert upgraded["standard"]["ref"] == "v0.2.0"
     assert upgraded["product"]["name"] == "legacy"
     assert upgraded["interfaces"]["cli"] is True
     assert upgraded["interfaces"]["json_schema"] is True
