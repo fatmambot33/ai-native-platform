@@ -51,6 +51,32 @@ def test_complete_repository_evidence_passes(tmp_path: Path) -> None:
     assert findings == []
 
 
+def test_mcp_declaration_is_optional() -> None:
+    data = _template()
+    data["interfaces"].pop("mcp")
+
+    assert contract_findings(data) == []
+
+
+def test_mcp_evidence_is_required_only_when_enabled() -> None:
+    data = _template()
+    data["interfaces"]["mcp"] = False
+    assert "mcp" not in required_evidence_keys(data)
+
+    data["interfaces"]["mcp"] = True
+    assert "mcp" in required_evidence_keys(data)
+
+
+def test_agent_tool_accepts_plugin_without_mcp_declaration() -> None:
+    data = _template()
+    data["product"]["profile"] = "agent-tool"
+    data["plugin"]["enabled"] = True
+    data["interfaces"]["plugin"] = True
+    data["interfaces"].pop("mcp")
+
+    assert contract_findings(data) == []
+
+
 def test_security_scan_requires_generic_security_evidence() -> None:
     keys = required_evidence_keys(_template())
 
