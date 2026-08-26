@@ -2,6 +2,19 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Changed
+
+- License the standard and validator under Apache-2.0 and align package metadata.
+- Make the unauthenticated, immutable public reusable workflow the primary documented distribution path.
+- Keep authenticated workflow access as an optional private-mirror path rather than the default.
+
+### Security
+
+- Publish CodeQL results automatically when the repository is public while retaining SARIF artifacts in all visibility modes.
+- Document GitHub private vulnerability reporting and a non-public fallback contact path.
+
 ## [0.2.0] - 2026-08-26
 
 ### Changed
