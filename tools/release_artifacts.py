@@ -101,7 +101,7 @@ def build_metadata(root: Path, dist: Path) -> dict[str, Path]:
             "buildDefinition": {
                 "buildType": (
                     "https://github.com/fatmambot33/ai-native-platform/"
-                    "blob/v0.1.0/.github/workflows/release.yml"
+                    f"blob/v{version}/.github/workflows/release.yml"
                 ),
                 "externalParameters": {"version": version},
                 "internalParameters": {},
