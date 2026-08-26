@@ -242,7 +242,6 @@
         "cli",
         "plugin",
         "json_schema",
-        "mcp",
         "openapi"
       ],
       "properties": {
