@@ -51,6 +51,54 @@ def test_complete_repository_evidence_passes(tmp_path: Path) -> None:
     assert findings == []
 
 
+def test_security_scan_requires_generic_security_evidence() -> None:
+    keys = required_evidence_keys(_template())
+
+    assert "security_evidence" in keys
+    assert "security_workflow" not in keys
+
+
+def test_workflow_security_evidence_passes(tmp_path: Path) -> None:
+    data = _template()
+    data["evidence"]["paths"]["security_evidence"] = ".github/workflows/codeql.yml"
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert findings == []
+
+
+def test_native_ruleset_security_evidence_passes(tmp_path: Path) -> None:
+    data = _template()
+    data["evidence"]["paths"]["security_evidence"] = ".github/SECURITY_ENFORCEMENT.md"
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert findings == []
+
+
+def test_legacy_security_workflow_key_is_not_an_alias(tmp_path: Path) -> None:
+    data = _template()
+    _materialize_evidence(tmp_path, data)
+    data["evidence"]["paths"].pop("security_evidence")
+    data["evidence"]["paths"]["security_workflow"] = ".github/SECURITY_ENFORCEMENT.md"
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.declaration_missing"
+        and finding.path == "evidence.paths.security_evidence"
+        for finding in findings
+    )
+
+
 def test_unknown_controlled_field_is_rejected() -> None:
     data = _template()
     data["product"]["unexpected"] = True
