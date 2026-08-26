@@ -37,7 +37,10 @@ def _materialize_evidence(root: Path, data: dict) -> None:
 
 
 def test_starter_template_contract_is_valid() -> None:
-    assert contract_findings(_template()) == []
+    data = _template()
+
+    assert "mcp" not in data["interfaces"]
+    assert contract_findings(data) == []
 
 
 def test_complete_repository_evidence_passes(tmp_path: Path) -> None:
@@ -53,8 +56,8 @@ def test_complete_repository_evidence_passes(tmp_path: Path) -> None:
 
 def test_mcp_declaration_is_optional() -> None:
     data = _template()
-    data["interfaces"].pop("mcp")
 
+    assert "mcp" not in data["interfaces"]
     assert contract_findings(data) == []
 
 
@@ -72,8 +75,8 @@ def test_agent_tool_accepts_plugin_without_mcp_declaration() -> None:
     data["product"]["profile"] = "agent-tool"
     data["plugin"]["enabled"] = True
     data["interfaces"]["plugin"] = True
-    data["interfaces"].pop("mcp")
 
+    assert "mcp" not in data["interfaces"]
     assert contract_findings(data) == []
 
 
@@ -179,4 +182,6 @@ def test_init_copies_canonical_template(tmp_path: Path) -> None:
         force = False
 
     assert command_init(Args()) == 0
-    assert load_mapping(Path(Args.destination))["version"] == 1
+    generated = load_mapping(Path(Args.destination))
+    assert generated["version"] == 1
+    assert "mcp" not in generated["interfaces"]
