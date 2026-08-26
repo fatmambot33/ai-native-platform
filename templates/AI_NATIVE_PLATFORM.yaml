@@ -28,7 +28,6 @@ interfaces:
   cli: false
   plugin: false
   json_schema: true
-  mcp: false
   openapi: false
 quality:
   typed: true
