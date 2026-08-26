@@ -20,7 +20,7 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 STANDARD_REPOSITORY = "fatmambot33/ai-native-platform"
 SCHEMA_NAME = "ai-native-platform.schema.json"
 TEMPLATE_NAME = "AI_NATIVE_PLATFORM.yaml"
@@ -246,7 +246,7 @@ def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
         if quality.get("examples") is True:
             keys.add("examples")
         if quality.get("security_scan") is True:
-            keys.add("security_workflow")
+            keys.add("security_evidence")
 
     if isinstance(plugin, Mapping):
         credentials = plugin.get("credentials", {})
@@ -374,7 +374,7 @@ def sarif_payload(manifest: Path, findings: Sequence[Finding]) -> dict[str, Any]
                 "shortDescription": {"text": finding.message},
                 "helpUri": (
                     "https://github.com/fatmambot33/ai-native-platform"
-                    "/blob/v0.1.0/README.md"
+                    "/blob/v0.2.0/README.md"
                 ),
                 "defaultConfiguration": {"level": finding.level},
             },
