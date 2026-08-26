@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 
+import tomli as tomllib
 import yaml
 from jsonschema import Draft202012Validator
 
@@ -36,6 +37,24 @@ def test_schema_json_is_stably_formatted() -> None:
     path = ROOT / "schemas/ai-native-platform.schema.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     assert path.read_text(encoding="utf-8") == json.dumps(data, indent=2) + "\n"
+
+
+def test_public_license_is_apache_2_0() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    license_file = (ROOT / "LICENSE").read_text(encoding="utf-8")
+
+    assert pyproject["project"]["license"]["text"] == "Apache-2.0"
+    assert "Apache License" in license_file
+    assert "Version 2.0, January 2004" in license_file
+
+
+def test_codeql_uploads_when_public_and_retains_private_fallback() -> None:
+    workflow = (ROOT / ".github/workflows/codeql.yml").read_text(encoding="utf-8")
+
+    assert "security-events: write" in workflow
+    assert "github.event.repository.private" in workflow
+    assert "'never' || 'always'" in workflow
+    assert "actions/upload-artifact@v4" in workflow
 
 
 def test_real_consumer_registry_is_immutable_and_diverse() -> None:
