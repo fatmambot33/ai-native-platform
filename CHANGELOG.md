@@ -2,6 +2,20 @@
 
 All notable changes are documented here.
 
+## [0.2.0] - 2026-08-26
+
+### Changed
+
+- **Breaking:** replace `evidence.paths.security_workflow` with `evidence.paths.security_evidence` when `quality.security_scan` is enabled. The old key is not accepted as an alias.
+- Security evidence is now implementation-neutral: consumers may point to a security workflow or to repository documentation proving native GitHub CodeQL, ruleset, or default-setup enforcement.
+- The starter manifest no longer implies that a custom CodeQL workflow is mandatory.
+
+### Migration
+
+- Rename `security_workflow` to `security_evidence` in `AI_NATIVE_PLATFORM.yaml`.
+- Keep the existing evidence path if it points to a real security workflow, or point the new key to a repository evidence document for native ruleset/default-setup scanning.
+- Pin consumers to the immutable v0.2 contract before validation.
+
 ## [0.1.0] - 2026-08-06
 
 ### Added
