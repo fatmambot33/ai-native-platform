@@ -1,6 +1,6 @@
 # AI Native Platform
 
-A canonical, evidence-backed standard for building first-class AI-native products and repositories.
+An Apache-2.0, evidence-backed standard for building first-class AI-native products and repositories.
 
 The repository provides:
 
@@ -67,16 +67,9 @@ v0.1 standard pin; the v0.2 validator itself does not accept the removed key.
 
 ## Distribution
 
-### Immutable vendored contract
+### Reusable public workflow
 
-This is the proven default. A consumer pins an immutable standard commit, vendors that commit's
-schema, and validates its manifest and repository evidence locally. The standard repository keeps an
-immutable registry and continuously revalidates every registered consumer.
-
-### Private reusable workflow
-
-Repositories with private Actions access may call the reusable workflow using a fine-grained
-read-only token stored as `AI_NATIVE_PLATFORM_TOKEN`:
+Public consumers can call the canonical workflow directly with no cross-repository secret:
 
 ```yaml
 jobs:
@@ -84,11 +77,18 @@ jobs:
     uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.2.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
-    secrets:
-      standard_token: ${{ secrets.AI_NATIVE_PLATFORM_TOKEN }}
 ```
 
-Never use `@main` in a production consumer. See `docs/DISTRIBUTION.md`.
+Pin an exact release or immutable commit SHA. Never use `@main` in a production consumer.
+
+### Immutable vendored contract
+
+Consumers that prefer no remote workflow dependency can pin an immutable standard commit, vendor
+that commit's schema, and validate their manifest and repository evidence locally. The standard
+repository keeps an immutable registry and continuously revalidates every registered consumer.
+
+Private mirrors may pass the reusable workflow's optional `standard_token` when cross-repository read
+access requires authentication. See `docs/DISTRIBUTION.md`.
 
 ## Real consumers
 
@@ -99,7 +99,7 @@ Never use `@main` in a production consumer. See `docs/DISTRIBUTION.md`.
 - `fatmambot33/openai-sdk-helpers` — agent tool.
 
 Every registered commit passes the canonical contract without repository-specific exceptions, its
-native repository CI, and CodeQL analysis with retained SARIF.
+native repository CI, and CodeQL analysis.
 
 ## Evidence-driven self-improvement
 
@@ -134,13 +134,12 @@ those gates pass. Checksums, SBOM, and provenance are published with the artifac
 attestations are added automatically when repository visibility and account capabilities support
 them. Later `main` changes cannot move the tag or replace release assets. See `docs/RELEASE.md`.
 
-## Repository-plan control
+## Public repository controls
 
-GitHub reports that protected-branch rulesets and hosted attestations are unavailable for this
-user-owned private repository on the current plan. The release workflow therefore duplicates and
-records all required checks and publishes independently verifiable integrity metadata as the active
-control. If visibility or plan capabilities change, required-check branch protection and hosted
-attestations become additional controls.
+Public operation requires protected `main`, required quality and conformance checks, and published
+CodeQL results. The workflows remain safe to execute while the repository is private: CodeQL retains
+SARIF without uploading it and release provenance remains independently verifiable. Once public,
+CodeQL publication and GitHub-hosted build attestations activate automatically.
 
 ## Repository structure
 
@@ -154,3 +153,7 @@ attestations become additional controls.
 - `templates/` — starter manifest, workflow, and agent instructions
 - `ROADMAP.md` — execution status and stability criteria
 - `docs/GOVERNANCE.md` — autonomy and approval policy
+
+## License
+
+AI Native Platform is licensed under the Apache License 2.0. See `LICENSE`.
