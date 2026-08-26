@@ -8,12 +8,15 @@ All notable changes are documented here.
 
 - **Breaking:** replace `evidence.paths.security_workflow` with `evidence.paths.security_evidence` when `quality.security_scan` is enabled. The old key is not accepted as an alias.
 - Security evidence is now implementation-neutral: consumers may point to a security workflow or to repository documentation proving native GitHub CodeQL, ruleset, or default-setup enforcement.
+- `interfaces.mcp` is optional to declare. When present as `true`, MCP repository evidence is still required.
+- The `agent-tool` profile still requires at least one agent surface: plugin or MCP. Plugin-only consumers do not need to declare `mcp: false`.
 - The starter manifest no longer implies that a custom CodeQL workflow is mandatory.
 
 ### Migration
 
 - Rename `security_workflow` to `security_evidence` in `AI_NATIVE_PLATFORM.yaml`.
 - Keep the existing evidence path if it points to a real security workflow, or point the new key to a repository evidence document for native ruleset/default-setup scanning.
+- Consumers without an MCP surface may omit `interfaces.mcp` entirely.
 - Pin consumers to the immutable v0.2 contract before validation.
 
 ## [0.1.0] - 2026-08-06
