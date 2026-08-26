@@ -82,10 +82,32 @@ def test_upgrade_unversioned_manifest() -> None:
     }
     upgraded = migrate_manifest(legacy)
     assert upgraded["version"] == CURRENT_MANIFEST_VERSION
-    assert upgraded["standard"]["ref"] == "v0.1.0"
+    assert upgraded["standard"]["ref"] == "v0.2.0"
     assert upgraded["product"]["name"] == "legacy"
     assert upgraded["interfaces"]["cli"] is True
     assert upgraded["interfaces"]["json_schema"] is True
+
+
+def test_upgrade_existing_v0_1_manifest_renames_security_evidence() -> None:
+    """The one-way upgrader rewrites the removed v0.1 security evidence key."""
+    legacy = {
+        "version": 1,
+        "standard": {
+            "repository": "fatmambot33/ai-native-platform",
+            "ref": "v0.1.0",
+        },
+        "evidence": {
+            "mode": "repository",
+            "paths": {"security_workflow": ".github/workflows/security.yml"},
+        },
+    }
+
+    upgraded = migrate_manifest(legacy)
+    paths = upgraded["evidence"]["paths"]
+
+    assert upgraded["standard"]["ref"] == "v0.2.0"
+    assert paths["security_evidence"] == ".github/workflows/security.yml"
+    assert "security_workflow" not in paths
 
 
 def test_upgrade_rejects_future_manifest() -> None:
@@ -196,14 +218,14 @@ def test_discovery_budget_suppression_and_external_signals(tmp_path: Path) -> No
 
 
 def test_release_metadata(tmp_path: Path) -> None:
-    """Release metadata includes checksums, SPDX, and SLSA statement inputs."""
+    """Release metadata includes checksums, SPDX, and current-version provenance."""
     (tmp_path / "pyproject.toml").write_text(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     dist = tmp_path / "dist"
     dist.mkdir()
-    artifact = dist / "ai_native_platform-0.1.0-py3-none-any.whl"
+    artifact = dist / "ai_native_platform-0.2.0-py3-none-any.whl"
     artifact.write_bytes(b"wheel")
     outputs = build_metadata(tmp_path, dist)
     assert outputs["checksums"].is_file()
@@ -211,3 +233,5 @@ def test_release_metadata(tmp_path: Path) -> None:
     provenance = json.loads(outputs["provenance"].read_text(encoding="utf-8"))
     assert sbom["spdxVersion"] == "SPDX-2.3"
     assert provenance["predicateType"] == "https://slsa.dev/provenance/v1"
+    build_type = provenance["predicate"]["buildDefinition"]["buildType"]
+    assert build_type.endswith("/blob/v0.2.0/.github/workflows/release.yml")

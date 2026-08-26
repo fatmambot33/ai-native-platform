@@ -20,7 +20,7 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 STANDARD_REPOSITORY = "fatmambot33/ai-native-platform"
 SCHEMA_NAME = "ai-native-platform.schema.json"
 TEMPLATE_NAME = "AI_NATIVE_PLATFORM.yaml"
@@ -246,7 +246,7 @@ def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
         if quality.get("examples") is True:
             keys.add("examples")
         if quality.get("security_scan") is True:
-            keys.add("security_workflow")
+            keys.add("security_evidence")
 
     if isinstance(plugin, Mapping):
         credentials = plugin.get("credentials", {})
@@ -374,7 +374,7 @@ def sarif_payload(manifest: Path, findings: Sequence[Finding]) -> dict[str, Any]
                 "shortDescription": {"text": finding.message},
                 "helpUri": (
                     "https://github.com/fatmambot33/ai-native-platform"
-                    "/blob/v0.1.0/README.md"
+                    "/blob/v0.2.0/README.md"
                 ),
                 "defaultConfiguration": {"level": finding.level},
             },
@@ -487,16 +487,35 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
             f"Manifest version {source_version} is newer than supported "
             f"version {CURRENT_MANIFEST_VERSION}"
         )
-    if source_version == CURRENT_MANIFEST_VERSION:
-        return copy.deepcopy(dict(data))
 
     defaults = load_mapping(template_path())
-    migrated = _deep_merge(defaults, data)
+    if source_version < CURRENT_MANIFEST_VERSION:
+        migrated = _deep_merge(defaults, data)
+    else:
+        migrated = copy.deepcopy(dict(data))
     migrated["version"] = CURRENT_MANIFEST_VERSION
+
+    migrated_security_key = False
+    evidence = migrated.get("evidence", {})
+    paths = evidence.get("paths", {}) if isinstance(evidence, Mapping) else {}
+    if isinstance(paths, dict) and "security_workflow" in paths:
+        if "security_evidence" not in paths:
+            paths["security_evidence"] = paths["security_workflow"]
+        del paths["security_workflow"]
+        migrated_security_key = True
+
     standard = migrated.setdefault("standard", {})
     if isinstance(standard, dict):
+        reference = str(standard.get("ref", ""))
         standard["repository"] = STANDARD_REPOSITORY
-        standard.setdefault("ref", f"v{__version__}")
+        if (
+            source_version < CURRENT_MANIFEST_VERSION
+            or migrated_security_key
+            or reference == "v0.1.0"
+        ):
+            standard["ref"] = f"v{__version__}"
+        else:
+            standard.setdefault("ref", f"v{__version__}")
     return migrated
 
 

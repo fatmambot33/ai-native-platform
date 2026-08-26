@@ -242,7 +242,6 @@
         "cli",
         "plugin",
         "json_schema",
-        "mcp",
         "openapi"
       ],
       "properties": {
@@ -479,7 +478,7 @@
             "examples": {
               "$ref": "#/$defs/pathValue"
             },
-            "security_workflow": {
+            "security_evidence": {
               "$ref": "#/$defs/pathValue"
             },
             "env_example": {

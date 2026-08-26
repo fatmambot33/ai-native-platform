@@ -21,7 +21,9 @@ The repository provides:
 | `plugin` | Plugin and JSON Schema |
 | `full-platform` | SDK, CLI, plugin, and JSON Schema |
 
-Every profile has a passing and focused failing manifest fixture under `fixtures/`.
+MCP is opt-in. Consumers without an MCP surface may omit `interfaces.mcp`; declaring `mcp: true`
+requires repository evidence for that surface. Every profile has a passing and focused failing manifest
+fixture under `fixtures/`.
 
 ## Install
 
@@ -59,7 +61,9 @@ ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff
 ai-native upgrade AI_NATIVE_PLATFORM.yaml
 ```
 
-The migration command never silently downgrades a future manifest version.
+The migration command never silently downgrades a future manifest version. For the v0.2 contract it
+also rewrites the removed `security_workflow` evidence key to `security_evidence` and updates an old
+v0.1 standard pin; the v0.2 validator itself does not accept the removed key.
 
 ## Distribution
 
@@ -77,7 +81,7 @@ read-only token stored as `AI_NATIVE_PLATFORM_TOKEN`:
 ```yaml
 jobs:
   conformance:
-    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.1.0
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.2.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
     secrets:
@@ -133,10 +137,10 @@ them. Later `main` changes cannot move the tag or replace release assets. See `d
 ## Repository-plan control
 
 GitHub reports that protected-branch rulesets and hosted attestations are unavailable for this
-user-owned private repository on the current plan. The v0.1 release workflow therefore duplicates
-and records all required checks and publishes independently verifiable integrity metadata as the
-active control. If visibility or plan capabilities change, required-check branch protection and
-hosted attestations become additional controls.
+user-owned private repository on the current plan. The release workflow therefore duplicates and
+records all required checks and publishes independently verifiable integrity metadata as the active
+control. If visibility or plan capabilities change, required-check branch protection and hosted
+attestations become additional controls.
 
 ## Repository structure
 

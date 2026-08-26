@@ -12,7 +12,7 @@ on:
         description: Exact standard release or immutable commit
         required: false
         type: string
-        default: v0.1.0
+        default: v0.2.0
     secrets:
       standard_token:
         description: Optional token with read access when the standard repository is private

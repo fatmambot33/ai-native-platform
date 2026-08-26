@@ -1,16 +1,16 @@
-# AI Native Platform v0.1.0
+# AI Native Platform v0.2.0
 
-The first executable prerelease of the AI-native repository standard.
+A focused prerelease that makes security evidence implementation-neutral and keeps MCP opt-in.
 
 Highlights:
 
-- profile-aware conformance for six product types;
-- evidence-backed validation with stable human, JSON, and SARIF findings;
-- installable CLI with scoring, diagnostics, initialization, and deterministic migrations;
-- complete passing and failing fixture matrix;
-- three real registered consumers: PermutiveAPI, MatplotLibAPI, and openai-sdk-helpers;
-- continuously verified immutable vendored-contract distribution;
-- optional private reusable workflow distribution;
-- bounded, secret-redacting self-improvement;
-- checksums, SPDX SBOM, verified SLSA-compatible provenance, and GitHub-hosted attestations when supported;
-- idempotent immutable tag and prerelease publication from a verified `main` commit.
+- `evidence.paths.security_evidence` is now the canonical evidence key when `quality.security_scan: true`;
+- the v0.1 `security_workflow` key is intentionally removed with no compatibility alias;
+- native GitHub CodeQL, default setup, and repository-ruleset enforcement can be proven by a repository-local evidence document without a duplicate custom workflow;
+- workflow-backed security scanning remains fully supported by pointing `security_evidence` at the workflow;
+- `interfaces.mcp` is optional; consumers without MCP do not need to declare `mcp: false`;
+- `mcp: true` still requires MCP evidence, and `agent-tool` still requires either plugin or MCP;
+- starter manifest, schema, fixtures, validator tests, documentation, and registered consumers migrate together;
+- regression coverage verifies workflow security evidence, native-ruleset evidence, legacy-key rejection, and optional MCP declarations.
+
+Migration: rename `security_workflow` to `security_evidence`; omit `interfaces.mcp` when unused; preserve or replace the security evidence path as appropriate; and pin the v0.2 contract.

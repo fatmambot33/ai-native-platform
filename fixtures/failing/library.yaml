@@ -1,7 +1,7 @@
 version: 1
 standard:
   repository: fatmambot33/ai-native-platform
-  ref: v0.1.0
+  ref: v0.2.0
 product:
   name: library-failing
   profile: library
@@ -28,4 +28,4 @@ self_improvement:
     human_approval: {breaking_changes: true, security_changes: true, credential_changes: true, public_api_changes: true, permission_expansion: true, release_changes: true}
 evidence:
   mode: repository
-  paths: {readme: evidence, tests: evidence, agent_instructions: evidence, typing: evidence, ci: evidence, sdk: evidence, cli: evidence, schemas: evidence, mcp: evidence, openapi: evidence, plugin_manifest: evidence, plugin_tests: evidence, docs: evidence, examples: evidence, security_workflow: evidence, env_example: evidence, gitignore: evidence, self_improvement_workflow: evidence, improvement_issue_template: evidence}
+  paths: {readme: evidence, tests: evidence, agent_instructions: evidence, typing: evidence, ci: evidence, sdk: evidence, cli: evidence, schemas: evidence, mcp: evidence, openapi: evidence, plugin_manifest: evidence, plugin_tests: evidence, docs: evidence, examples: evidence, security_evidence: evidence, env_example: evidence, gitignore: evidence, self_improvement_workflow: evidence, improvement_issue_template: evidence}
