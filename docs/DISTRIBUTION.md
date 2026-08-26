@@ -1,6 +1,6 @@
 # Distribution
 
-`v0.1.0` supports two immutable distribution modes.
+`v0.2.0` supports two immutable distribution modes.
 
 ## Vendored contract snapshot
 
@@ -18,7 +18,7 @@ Repositories granted private Actions access may instead call the reusable workfl
 fine-grained read-only token stored as `AI_NATIVE_PLATFORM_TOKEN`. The token must never be committed,
 echoed, or exposed to untrusted pull-request code.
 
-Consumers must pin `v0.1.0` or an immutable commit SHA. Never use `@main` in production.
+Consumers must pin `v0.2.0` or an immutable commit SHA. Never use `@main` in production.
 
 ## Rollback and revocation
 
