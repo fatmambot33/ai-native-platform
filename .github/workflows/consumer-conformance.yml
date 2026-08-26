@@ -76,3 +76,16 @@ jobs:
           if actual_ref != os.environ['EXPECTED_STANDARD_REF']:
               raise SystemExit(f'standard ref {actual_ref!r} != {os.environ["EXPECTED_STANDARD_REF"]!r}')
           PY
+
+  consumer-conformance:
+    needs: [registry, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every consumer conformance job to pass
+        env:
+          REGISTRY_RESULT: ${{ needs.registry.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+        run: |
+          test "$REGISTRY_RESULT" = success
+          test "$VALIDATE_RESULT" = success
