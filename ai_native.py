@@ -487,16 +487,35 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
             f"Manifest version {source_version} is newer than supported "
             f"version {CURRENT_MANIFEST_VERSION}"
         )
-    if source_version == CURRENT_MANIFEST_VERSION:
-        return copy.deepcopy(dict(data))
 
     defaults = load_mapping(template_path())
-    migrated = _deep_merge(defaults, data)
+    if source_version < CURRENT_MANIFEST_VERSION:
+        migrated = _deep_merge(defaults, data)
+    else:
+        migrated = copy.deepcopy(dict(data))
     migrated["version"] = CURRENT_MANIFEST_VERSION
+
+    migrated_security_key = False
+    evidence = migrated.get("evidence", {})
+    paths = evidence.get("paths", {}) if isinstance(evidence, Mapping) else {}
+    if isinstance(paths, dict) and "security_workflow" in paths:
+        if "security_evidence" not in paths:
+            paths["security_evidence"] = paths["security_workflow"]
+        del paths["security_workflow"]
+        migrated_security_key = True
+
     standard = migrated.setdefault("standard", {})
     if isinstance(standard, dict):
+        reference = str(standard.get("ref", ""))
         standard["repository"] = STANDARD_REPOSITORY
-        standard.setdefault("ref", f"v{__version__}")
+        if (
+            source_version < CURRENT_MANIFEST_VERSION
+            or migrated_security_key
+            or reference == "v0.1.0"
+        ):
+            standard["ref"] = f"v{__version__}"
+        else:
+            standard.setdefault("ref", f"v{__version__}")
     return migrated
 
 
