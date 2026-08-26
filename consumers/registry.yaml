@@ -5,7 +5,7 @@ consumers:
     profile: full-platform
     manifest: AI_NATIVE_PLATFORM.yaml
   - repository: fatmambot33/MatplotLibAPI
-    ref: 1b52c47e0e1835954899e73513a2e71d85cd08b4
+    ref: 0a36046386dea43a94c5d3fba7eef4fd5171f4f9
     profile: full-platform
     manifest: AI_NATIVE_PLATFORM.yaml
   - repository: fatmambot33/openai-sdk-helpers
