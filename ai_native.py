@@ -48,6 +48,22 @@ PROFILE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     ),
 }
 BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
+AI_REVIEW_ACTION_PATTERN = re.compile(
+    r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@[0-9a-f]{40}"
+)
+AI_REVIEW_REQUIRED_TOKENS = (
+    "pull_request:",
+    "pull_request_target:",
+    "codex-review:",
+    "mode: request",
+    "mode: wait",
+    "issues: write",
+    "issues: read",
+    "pull-requests: read",
+    "github.event_name == 'pull_request_target'",
+    "github.event_name == 'pull_request'",
+    "cancel-in-progress: true",
+)
 
 
 @dataclass(frozen=True)
@@ -254,13 +270,7 @@ def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
             keys.update({"env_example", "gitignore"})
 
     if isinstance(self_improvement, Mapping) and self_improvement.get("enabled") is True:
-        keys.update(
-            {
-                "ai_review_workflow",
-                "self_improvement_workflow",
-                "improvement_issue_template",
-            }
-        )
+        keys.update({"self_improvement_workflow", "improvement_issue_template"})
     return keys
 
 
@@ -281,6 +291,74 @@ def _path_exists(root: Path, declaration: str) -> bool:
     if any(character in declaration for character in "*?["):
         return any(candidate.exists() for candidate in root.glob(declaration))
     return (root / declaration).exists()
+
+
+def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
+    """Validate an explicitly declared trusted AI-review workflow."""
+    path_name = "evidence.paths.ai_review_workflow"
+    if not isinstance(value, str):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review evidence must be one workflow path string.",
+                path_name,
+            )
+        ]
+
+    relative = Path(value)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or len(relative.parts) < 3
+        or relative.parts[0:2] != (".github", "workflows")
+        or relative.suffix not in {".yml", ".yaml"}
+    ):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review evidence must point to a .github/workflows YAML file.",
+                path_name,
+            )
+        ]
+
+    workflow = root / relative
+    if not workflow.is_file():
+        return [
+            Finding(
+                "evidence.path_missing",
+                f"No repository evidence found for: {value}",
+                path_name,
+            )
+        ]
+
+    text = workflow.read_text(encoding="utf-8")
+    missing = [token for token in AI_REVIEW_REQUIRED_TOKENS if token not in text]
+    if missing:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow is missing trusted governance semantics: "
+                + ", ".join(missing),
+                path_name,
+            )
+        ]
+    if AI_REVIEW_ACTION_PATTERN.search(text) is None:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow must pin the canonical gate action to a 40-character commit SHA.",
+                path_name,
+            )
+        ]
+    if re.search(r"(?:statuses|checks):\s*write", text):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "The required PR review job must not rely on writable status/check APIs.",
+                path_name,
+            )
+        ]
+    return []
 
 
 def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
@@ -317,6 +395,9 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
                     f"evidence.paths.{key}",
                 )
             )
+
+    if "ai_review_workflow" in paths:
+        findings.extend(_ai_review_workflow_findings(paths["ai_review_workflow"], root))
     return findings
 
 
@@ -345,6 +426,7 @@ def conformance_score(findings: Iterable[Finding]) -> int:
         "evidence.declaration_missing": 7,
         "evidence.path_missing": 7,
         "evidence.paths_invalid": 20,
+        "evidence.ai_review_workflow_invalid": 20,
     }
     return max(0, 100 - sum(deductions.get(item.code, 5) for item in findings))
 
