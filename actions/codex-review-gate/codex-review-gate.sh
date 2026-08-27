@@ -8,7 +8,7 @@ set -euo pipefail
 
 HEAD_REPO="${HEAD_REPO:-$REPO}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
-POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-15}"
+POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 REQUEST_ONLY="${CODEX_REVIEW_REQUEST_ONLY:-false}"
 SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
@@ -16,9 +16,17 @@ COMMENT_ID=""
 
 is_codex_login='(.user.login // "") | startswith("chatgpt-codex-connector")'
 
+api_list() {
+  local endpoint="$1"
+  gh api --paginate \
+    -H "Accept: application/vnd.github+json" \
+    "$endpoint" \
+    --jq '.[]' | jq -s '.'
+}
+
 has_matching_review() {
   local reviews
-  reviews="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
   jq -e \
     --arg head "$HEAD_SHA" \
     --arg short "$SHORT_SHA" \
@@ -26,56 +34,50 @@ has_matching_review() {
     <<<"$reviews" >/dev/null
 }
 
-has_pr_clean_reaction() {
-  local reactions
-  reactions="$(gh api \
-    -H "Accept: application/vnd.github+json" \
-    "repos/${REPO}/issues/${PR_NUMBER}/reactions?per_page=100")"
-  jq -e \
-    --arg since "$HEAD_COMMIT_AT" \
-    "any(.[]; (${is_codex_login}) and .content == \"+1\" and .created_at >= \$since)" \
-    <<<"$reactions" >/dev/null
+find_trigger_comment() {
+  local comments
+  comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
+  COMMENT_ID="$(
+    jq -r \
+      --arg marker "$MARKER" \
+      --arg short "$SHORT_SHA" \
+      '[.[] | select(((.body // "") | contains($marker)) or (((.body // "") | contains("@codex review")) and ((.body // "") | contains($short))))] | last | .id // empty' \
+      <<<"$comments"
+  )"
 }
 
 has_trigger_clean_reaction() {
+  [[ -n "$COMMENT_ID" ]] || find_trigger_comment
   [[ -n "$COMMENT_ID" ]] || return 1
   local reactions
-  reactions="$(gh api \
-    -H "Accept: application/vnd.github+json" \
-    "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions?per_page=100")"
+  reactions="$(api_list "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions?per_page=100")"
   jq -e \
     "any(.[]; (${is_codex_login}) and .content == \"+1\")" \
     <<<"$reactions" >/dev/null
 }
 
-HEAD_COMMIT_AT="$(
-  gh api "repos/${REPO}/commits/${HEAD_SHA}" \
-    --jq '.commit.committer.date // .commit.author.date'
-)"
+echo "Checking Codex evidence for current HEAD ${SHORT_SHA}."
 
-if has_matching_review || has_pr_clean_reaction; then
+if has_matching_review; then
   echo "Codex already reviewed current HEAD ${SHORT_SHA}."
   exit 0
 fi
 
-comments="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
-COMMENT_ID="$(
-  jq -r --arg marker "$MARKER" \
-    '[.[] | select((.body // "") | contains($marker))] | last | .id // empty' \
-    <<<"$comments"
-)"
-
+find_trigger_comment
 if [[ -z "$COMMENT_ID" && "$HEAD_REPO" == "$REPO" ]]; then
   body="$(printf '@codex review\n\nAutomated AI Native Platform merge gate for `%s`.\n%s\n' "$SHORT_SHA" "$MARKER")"
-  response="$(
+  if response="$(
     gh api --method POST \
       "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-      -f body="$body"
-  )"
-  COMMENT_ID="$(jq -r '.id' <<<"$response")"
-  echo "Requested Codex review for current HEAD ${SHORT_SHA}."
+      -f body="$body" 2>/dev/null
+  )"; then
+    COMMENT_ID="$(jq -r '.id' <<<"$response")"
+    echo "Requested Codex review for current HEAD ${SHORT_SHA}."
+  else
+    echo "::notice::This pull-request token cannot post the Codex request. A maintainer can comment '@codex review ${SHORT_SHA}' and the gate will bind Codex's response to that HEAD."
+  fi
 elif [[ -z "$COMMENT_ID" ]]; then
-  echo "External PR detected; waiting for Codex auto-review or a maintainer @codex review request."
+  echo "External PR detected. A maintainer can comment '@codex review ${SHORT_SHA}' to create HEAD-specific review evidence."
 else
   echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
 fi
@@ -95,12 +97,8 @@ while (( SECONDS < deadline )); do
     echo "Codex reported no findings for current HEAD ${SHORT_SHA}."
     exit 0
   fi
-  if has_pr_clean_reaction; then
-    echo "Codex clean-review reaction is newer than current HEAD ${SHORT_SHA}."
-    exit 0
-  fi
   sleep "$POLL_SECONDS"
 done
 
-echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}. Re-run the check after Codex responds, or comment @codex review on the PR."
+echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}. Comment '@codex review ${SHORT_SHA}' on the PR if an automatic request could not be posted, then re-run this check after Codex responds."
 exit 1
