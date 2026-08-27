@@ -26,7 +26,7 @@ inputs:
   poll-seconds:
     description: Poll interval while waiting for Codex.
     required: false
-    default: "15"
+    default: "60"
 
 runs:
   using: composite
