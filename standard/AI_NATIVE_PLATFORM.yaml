@@ -4,7 +4,7 @@ standard:
   repository: fatmambot33/ai-native-platform
   lifecycle: prerelease
   versioning: semver
-  current_release: 0.2.0
+  current_release: 0.3.0
 
 product_model:
   contract: schemas/ai-native-platform.schema.json
