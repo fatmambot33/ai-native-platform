@@ -15,6 +15,10 @@ inputs:
     description: Full name of the pull request HEAD repository.
     required: false
     default: ""
+  request-only:
+    description: Request the current-HEAD review without waiting for completion.
+    required: false
+    default: "false"
   timeout-seconds:
     description: Maximum time to wait for Codex.
     required: false
@@ -35,6 +39,7 @@ runs:
         PR_NUMBER: ${{ inputs.pr-number }}
         HEAD_SHA: ${{ inputs.head-sha }}
         HEAD_REPO: ${{ inputs.head-repo }}
+        CODEX_REVIEW_REQUEST_ONLY: ${{ inputs.request-only }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
       run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
