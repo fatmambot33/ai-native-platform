@@ -1,0 +1,40 @@
+name: Codex current-HEAD review gate
+description: Require Codex to review the current pull-request HEAD before a protected check can pass.
+
+inputs:
+  token:
+    description: GitHub token with issues:write and pull-requests:read permissions.
+    required: true
+  pr-number:
+    description: Pull request number.
+    required: true
+  head-sha:
+    description: Current pull request HEAD SHA.
+    required: true
+  head-repo:
+    description: Full name of the pull request HEAD repository.
+    required: false
+    default: ""
+  timeout-seconds:
+    description: Maximum time to wait for Codex.
+    required: false
+    default: "1800"
+  poll-seconds:
+    description: Poll interval while waiting for Codex.
+    required: false
+    default: "15"
+
+runs:
+  using: composite
+  steps:
+    - name: Require Codex review of current HEAD
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        HEAD_REPO: ${{ inputs.head-repo }}
+        CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+        CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
+      run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
