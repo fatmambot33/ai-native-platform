@@ -47,6 +47,13 @@ required_agent_guarantees:
   - governed_autonomy
 
 governance:
+  ai_review:
+    provider: codex
+    current_head_required: true
+    review_thread_resolution_required: true
+    human_approval_required: false
+    request_while_ci_runs: true
+    reference_action: actions/codex-review-gate
   human_approval_required:
     - breaking_changes
     - security_changes
@@ -69,3 +76,5 @@ release_gates:
   - documentation_current
   - changelog_current
   - migration_notes_for_breaking_changes
+  - ai_review_current_head
+  - review_threads_resolved
