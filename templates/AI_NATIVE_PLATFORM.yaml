@@ -75,7 +75,7 @@ evidence:
     schemas: schemas
     docs: docs
     examples: examples
-    # This must be a trusted pull_request_target workflow whose definition comes from the protected base branch.
+    # Optional for version-one manifests. If declared, this trusted workflow is semantically validated.
     ai_review_workflow: .github/workflows/codex-review.yml
     # May point to a security workflow or a document proving native GitHub CodeQL, default setup, or ruleset enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md
