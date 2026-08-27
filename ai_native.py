@@ -254,7 +254,13 @@ def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
             keys.update({"env_example", "gitignore"})
 
     if isinstance(self_improvement, Mapping) and self_improvement.get("enabled") is True:
-        keys.update({"self_improvement_workflow", "improvement_issue_template"})
+        keys.update(
+            {
+                "ai_review_workflow",
+                "self_improvement_workflow",
+                "improvement_issue_template",
+            }
+        )
     return keys
 
 
