@@ -1,1 +1,3 @@
-* @fatmambot33
+/.github/workflows/** @fatmambot33
+/.github/CODEOWNERS @fatmambot33
+/actions/codex-review-gate/** @fatmambot33
