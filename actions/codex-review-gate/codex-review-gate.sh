@@ -14,7 +14,7 @@ SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
 COMMENT_ID=""
 
-is_codex_login='(.user.login // "") | startswith("chatgpt-codex-connector")'
+is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
 api_list() {
   local endpoint="$1"
@@ -41,7 +41,20 @@ find_trigger_comment() {
     jq -r \
       --arg marker "$MARKER" \
       --arg short "$SHORT_SHA" \
-      '[.[] | select(((.body // "") | contains($marker)) or (((.body // "") | contains("@codex review")) and ((.body // "") | contains($short))))] | last | .id // empty' \
+      '[
+        .[]
+        | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
+        | select((.body // "") | contains($short))
+        | select(
+            ((((.body // "") | contains($marker)) and ((.user.login // "") == "github-actions[bot]")))
+            or
+            ((((.body // "") | contains($marker)) | not) and (
+              (.author_association // "") == "OWNER"
+              or (.author_association // "") == "MEMBER"
+              or (.author_association // "") == "COLLABORATOR"
+            ))
+          )
+      ] | last | .id // empty' \
       <<<"$comments"
   )"
 }
