@@ -1,7 +1,7 @@
 version: 1
 standard:
   repository: fatmambot33/ai-native-platform
-  ref: v0.2.0
+  ref: v0.3.0
 product:
   name: example-product
   profile: library
@@ -77,7 +77,7 @@ evidence:
     examples: examples
     # The protected validation workflow should invoke the framework's Codex current-HEAD review gate.
     ai_review_workflow: .github/workflows/validate.yml
-    # May point to a security workflow or a document proving native ruleset/default-setup enforcement.
+    # May point to a security workflow or a document proving native GitHub CodeQL, default setup, or ruleset enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md
     self_improvement_workflow: .github/workflows/self-improve.yml
     improvement_issue_template: .github/ISSUE_TEMPLATE/ai-improvement.yml
