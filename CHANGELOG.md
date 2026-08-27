@@ -9,7 +9,7 @@ All notable changes are documented here.
 - Add an optional, off-by-default LLM self-improvement analysis layer with bounded repository evidence, strict structured output, deterministic grounding and confidence checks, a shared issue budget, and fail-soft behavior when credentials or the model are unavailable.
 - Define current-HEAD AI review as a first-class merge-governance invariant for AI-native repositories.
 - Add the reusable `actions/codex-review-gate` composite action for Codex review enforcement.
-- Add a two-phase review flow that requests Codex before validation and waits for current-HEAD evidence only after normal validation work has run.
+- Add a trusted `pull_request_target` governance workflow that runs from protected base-branch code while ordinary pull-request validation runs in parallel.
 - Add repository evidence for the protected workflow that enforces AI review governance.
 - Document the solo-maintainer model: zero required human approvals for ordinary changes, current-HEAD Codex review, required review-thread resolution, and compatibility with auto-merge.
 
@@ -21,12 +21,14 @@ All notable changes are documented here.
 - Treat any new PR commit as invalidating older Codex review evidence.
 - Match Codex review evidence to the full GitHub review `commit_id`; clean-review reactions are accepted only on a HEAD-specific review request.
 - Paginate GitHub review/comment/reaction reads and poll conservatively to stay within GitHub API budgets.
+- Require `evidence.paths.ai_review_workflow` when governed self-improvement is enabled.
 
 ### Security
 
 - Publish CodeQL results automatically when the repository is public while retaining SARIF artifacts in all visibility modes.
 - Document GitHub private vulnerability reporting and a non-public fallback contact path.
-- Scope `issues: write` to the validation job only, for posting the HEAD-specific `@codex review` request.
+- Scope `issues: write` to the trusted AI-review governance job only, for posting the HEAD-specific `@codex review` request.
+- Execute AI-review enforcement only from protected base-branch workflow code; PR-controlled validation cannot satisfy the AI-review security boundary.
 - Fail safely for fork and Dependabot contexts where the pull-request token cannot post comments; maintainers can supply the same exact-command, HEAD-scoped request manually.
 
 ## [0.2.0] - 2026-08-26
@@ -59,7 +61,7 @@ All notable changes are documented here.
 - Vendored-contract distribution proven in PermutiveAPI, MatplotLibAPI, and openai-sdk-helpers.
 - Bounded evidence-driven self-improvement with redaction, suppression, fingerprinting, and issue budgets.
 - SHA-256 checksums, SPDX SBOM, verified SLSA-compatible provenance, and conditional GitHub-hosted attestations.
-- Idempotent verified-main release workflow that creates the immutable tag and GitHub prerelease.
+- Idempotent verified-main release workflow that creates the immutable semantic tag and GitHub prerelease.
 
 ### Security
 
