@@ -1,7 +1,7 @@
 version: 1
 standard:
   repository: fatmambot33/ai-native-platform
-  ref: v0.3.0
+  ref: v0.2.0
 product:
   name: example-product
   profile: library
