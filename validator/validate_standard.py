@@ -48,6 +48,7 @@ REQUIRED_FILES = (
     "templates/validate.yml",
     "templates/AGENTS.md",
     "docs/GOVERNANCE.md",
+    "docs/AI_REVIEW_GOVERNANCE.md",
     "docs/DISTRIBUTION.md",
     "docs/RELEASE.md",
     "tests/test_validation.py",
@@ -63,6 +64,7 @@ REQUIRED_FILES = (
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/workflows/validate.yml",
+    ".github/workflows/codex-review.yml",
     ".github/workflows/quality.yml",
     ".github/workflows/codeql.yml",
     ".github/workflows/self-improve.yml",
@@ -350,6 +352,26 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
                 "README.md",
             )
         )
+
+    codex_review = (root / ".github/workflows/codex-review.yml").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "pull_request_target:",
+        "actions/codex-review-gate",
+        "issues: write",
+        "pull-requests: read",
+        "github.event.pull_request.base.sha",
+        "persist-credentials: false",
+    ):
+        if token not in codex_review:
+            findings.append(
+                Finding(
+                    "standard.ai_review_workflow_incomplete",
+                    f"AI review workflow must include {token!r}.",
+                    ".github/workflows/codex-review.yml",
+                )
+            )
 
     release_workflow = (root / ".github/workflows/release.yml").read_text(
         encoding="utf-8"
