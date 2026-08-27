@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AI_NATIVE_ISSUE_BUDGET: ${{ inputs.issue_budget || '5' }}
-      AI_NATIVE_LLM_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.use_ai) || vars.AI_NATIVE_LLM_ENABLED == 'true' }}
+      AI_NATIVE_LLM_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.use_ai) || (github.event_name == 'schedule' && vars.AI_NATIVE_LLM_ENABLED == 'true') }}
       AI_NATIVE_LLM_MODEL: ${{ vars.AI_NATIVE_LLM_MODEL || 'gpt-5.6-luna' }}
       AI_NATIVE_LLM_MIN_CONFIDENCE: ${{ vars.AI_NATIVE_LLM_MIN_CONFIDENCE || '0.80' }}
       AI_NATIVE_LLM_MAX_INPUT_CHARS: ${{ vars.AI_NATIVE_LLM_MAX_INPUT_CHARS || '50000' }}
