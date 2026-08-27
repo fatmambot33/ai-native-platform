@@ -1,9 +1,9 @@
 name: Codex current-HEAD review gate
-description: Require Codex to review the current pull-request HEAD before merge governance can pass.
+description: Request or require Codex review evidence for a pull-request HEAD.
 
 inputs:
   token:
-    description: GitHub token with issues:write and pull-requests:read permissions.
+    description: GitHub token. Request mode needs issues:write; wait mode needs read permissions only.
     required: true
   pr-number:
     description: Pull request number.
@@ -11,6 +11,10 @@ inputs:
   head-sha:
     description: Current pull request HEAD SHA.
     required: true
+  mode:
+    description: Either request or wait.
+    required: false
+    default: wait
   timeout-seconds:
     description: Maximum time to wait for Codex.
     required: false
@@ -23,13 +27,14 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Require Codex review of current HEAD
+    - name: Run Codex current-HEAD review gate
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
         REPO: ${{ github.repository }}
         PR_NUMBER: ${{ inputs.pr-number }}
         HEAD_SHA: ${{ inputs.head-sha }}
+        CODEX_REVIEW_MODE: ${{ inputs.mode }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
       run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
