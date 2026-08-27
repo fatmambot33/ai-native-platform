@@ -37,6 +37,12 @@ For development:
 python -m pip install -e '.[dev]'
 ```
 
+The optional LLM self-improvement integration is kept out of the core dependency set:
+
+```bash
+python -m pip install -e '.[llm]'
+```
+
 ## CLI
 
 ```bash
@@ -117,6 +123,32 @@ The scheduled workflow:
 External normalized signals belong in `.ai-native/signals.json`. See
 `.ai-native/signals.example.json`.
 
+### Optional LLM analysis
+
+LLM analysis is an enhancement to deterministic discovery, not a requirement. By default, scheduled
+runs make no model calls and incur no LLM API cost. A manual `workflow_dispatch` run must explicitly
+set `use_ai: true`. Scheduled AI analysis activates only when the repository variable
+`AI_NATIVE_LLM_ENABLED` is exactly `true`.
+
+The current adapter uses OpenAI's Responses API with strict structured output. Configure the paid path
+with the `OPENAI_API_KEY` Actions secret. The secret is exposed only to the model-analysis step and is
+never passed to issue creation or deterministic validation. If the key is absent or the model call
+fails, the workflow keeps the deterministic findings and completes without the AI enhancement.
+
+Cost and quality controls are bounded and configurable with repository variables:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `AI_NATIVE_LLM_MODEL` | `gpt-5.6-luna` | Model used for optional analysis |
+| `AI_NATIVE_LLM_MIN_CONFIDENCE` | `0.80` | Minimum accepted model confidence |
+| `AI_NATIVE_LLM_MAX_INPUT_CHARS` | `50000` | Maximum repository text sent per run |
+| `AI_NATIVE_LLM_MAX_OUTPUT_TOKENS` | `2000` | Maximum output tokens for the single model call |
+
+The model receives a sanitized, bounded set of high-signal repository files plus current deterministic
+findings. It has no GitHub credential or write capability. Model proposals must cite supplied evidence
+paths, survive local path and confidence checks, avoid duplicates, and fit inside the same total issue
+budget as deterministic findings before the workflow can create an issue.
+
 ## Release integrity
 
 A verified `main` run must pass:
@@ -148,7 +180,8 @@ CodeQL publication and GitHub-hosted build attestations activate automatically.
 - `ai_native.py` — validator, migration library, SARIF, and CLI
 - `fixtures/` — passing, failing, and consumer fixtures
 - `consumers/registry.yaml` — immutable real-consumer proof
-- `tools/improvement_engine.py` — bounded discovery
+- `tools/improvement_engine.py` — bounded deterministic discovery
+- `tools/llm_improvement.py` — optional read-only LLM analysis and proposal validation
 - `tools/release_artifacts.py` — checksums, SBOM, and provenance metadata
 - `templates/` — starter manifest, workflow, and agent instructions
 - `ROADMAP.md` — execution status and stability criteria

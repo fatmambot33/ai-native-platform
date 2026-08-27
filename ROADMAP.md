@@ -52,14 +52,17 @@ activate as additional controls without changing the contract.
 
 ## Phase 4 — Evidence-driven self-improvement
 
-Status: **complete for read-only discovery and issue creation**
+Status: **complete for deterministic and optional read-only AI discovery plus issue creation**
 
 - [x] Detect canonical, fixture, consumer, and release drift.
 - [x] Ingest normalized CI, dependency, docs, schema, evaluation, and release signals.
 - [x] Redact secret assignments.
 - [x] Deduplicate with stable fingerprints.
 - [x] Support suppression with expiry.
-- [x] Enforce an issue budget.
+- [x] Enforce a shared issue budget.
+- [x] Add optional, off-by-default LLM analysis over bounded repository evidence.
+- [x] Require strict structured model output, grounded repository paths, and confidence filtering.
+- [x] Keep model access read-only and fail back to deterministic discovery without credentials.
 - [x] Keep branch and PR preparation disabled.
 
 ## Real consumer proof
