@@ -8,9 +8,10 @@ All notable changes are documented here.
 
 - Add an optional, off-by-default LLM self-improvement analysis layer with bounded repository evidence, strict structured output, deterministic grounding and confidence checks, a shared issue budget, and fail-soft behavior when credentials or the model are unavailable.
 - Define current-HEAD AI review as a first-class merge-governance invariant for AI-native repositories.
-- Add the reusable `actions/codex-review-gate` composite action for Codex review enforcement.
-- Add a trusted `pull_request_target` governance workflow that runs from protected base-branch code while ordinary pull-request validation runs in parallel.
-- Add repository evidence for the protected workflow that enforces AI review governance.
+- Add the reusable `actions/codex-review-gate` composite action for Codex review request/wait enforcement.
+- Add a split-event governance workflow: a trusted `pull_request_target` request job and a read-only, head-native `pull_request` job named `codex-review`.
+- Add repository evidence for AI-review governance and semantic validation of declared review workflows.
+- Add narrow CODEOWNERS protection for workflow definitions, CODEOWNERS itself, and the framework's reusable gate action.
 - Document the solo-maintainer model: zero required human approvals for ordinary changes, current-HEAD Codex review, required review-thread resolution, and compatibility with auto-merge.
 
 ### Changed
@@ -19,17 +20,19 @@ All notable changes are documented here.
 - Make the unauthenticated, immutable public reusable workflow the primary documented distribution path.
 - Keep authenticated workflow access as an optional private-mirror path rather than the default.
 - Treat any new PR commit as invalidating older Codex review evidence.
-- Match Codex review evidence to the full GitHub review `commit_id`; clean-review reactions are accepted only on a HEAD-specific review request.
+- Match Codex review evidence to the full GitHub review `commit_id`; clean-review reactions are accepted only on a HEAD-specific trusted request.
 - Paginate GitHub review/comment/reaction reads and poll conservatively to stay within GitHub API budgets.
-- Require `evidence.paths.ai_review_workflow` when governed self-improvement is enabled.
+- Keep `evidence.paths.ai_review_workflow` opt-in for version-one manifests; when declared, require a real trusted workflow with immutable action pins and the canonical request/wait semantics.
 
 ### Security
 
 - Publish CodeQL results automatically when the repository is public while retaining SARIF artifacts in all visibility modes.
 - Document GitHub private vulnerability reporting and a non-public fallback contact path.
-- Scope `issues: write` to the trusted AI-review governance job only, for posting the HEAD-specific `@codex review` request.
-- Execute AI-review enforcement only from protected base-branch workflow code; PR-controlled validation cannot satisfy the AI-review security boundary.
-- Fail safely for fork and Dependabot contexts where the pull-request token cannot post comments; maintainers can supply the same exact-command, HEAD-scoped request manually.
+- Scope `issues: write` to the base-trusted AI-review request job only.
+- Keep the required `codex-review` pull-request job read-only; do not use `statuses: write` or `checks: write` as the merge trust boundary.
+- Protect governance workflow definitions with narrow CODEOWNERS rules and require code-owner review for those files after bootstrap.
+- Pin the reusable Codex gate action to immutable 40-character framework commits.
+- Remove editable maintainer-comment fallback evidence; only the trusted request path can create clean-reaction evidence.
 
 ## [0.2.0] - 2026-08-26
 
