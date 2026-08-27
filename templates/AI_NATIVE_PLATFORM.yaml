@@ -75,8 +75,8 @@ evidence:
     schemas: schemas
     docs: docs
     examples: examples
-    # The protected validation workflow should invoke the framework's Codex current-HEAD review gate.
-    ai_review_workflow: .github/workflows/validate.yml
+    # This must be a trusted pull_request_target workflow whose definition comes from the protected base branch.
+    ai_review_workflow: .github/workflows/codex-review.yml
     # May point to a security workflow or a document proving native GitHub CodeQL, default setup, or ruleset enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md
     self_improvement_workflow: .github/workflows/self-improve.yml
