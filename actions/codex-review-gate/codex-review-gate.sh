@@ -9,6 +9,7 @@ set -euo pipefail
 HEAD_REPO="${HEAD_REPO:-$REPO}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-15}"
+REQUEST_ONLY="${CODEX_REVIEW_REQUEST_ONLY:-false}"
 SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
 COMMENT_ID=""
@@ -77,6 +78,11 @@ elif [[ -z "$COMMENT_ID" ]]; then
   echo "External PR detected; waiting for Codex auto-review or a maintainer @codex review request."
 else
   echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
+fi
+
+if [[ "$REQUEST_ONLY" == "true" || "$REQUEST_ONLY" == "1" ]]; then
+  echo "Codex review request phase complete for ${SHORT_SHA}."
+  exit 0
 fi
 
 deadline=$((SECONDS + TIMEOUT_SECONDS))
