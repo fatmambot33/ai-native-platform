@@ -4,6 +4,10 @@ All notable changes are documented here.
 
 ## Unreleased
 
+### Added
+
+- Add an optional, off-by-default LLM self-improvement analysis layer with bounded repository evidence, strict structured output, deterministic grounding and confidence checks, a shared issue budget, and fail-soft behavior when credentials or the model are unavailable.
+
 ### Changed
 
 - License the standard and validator under Apache-2.0 and align package metadata.
