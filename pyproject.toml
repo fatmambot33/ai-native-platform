@@ -28,6 +28,9 @@ dev = [
   "pytest>=8.3,<9",
   "ruff>=0.12,<1",
 ]
+llm = [
+  "openai>=3.3,<4",
+]
 
 [project.scripts]
 ai-native = "ai_native:main"
