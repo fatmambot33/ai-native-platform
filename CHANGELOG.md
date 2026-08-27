@@ -19,6 +19,27 @@ All notable changes are documented here.
 - Publish CodeQL results automatically when the repository is public while retaining SARIF artifacts in all visibility modes.
 - Document GitHub private vulnerability reporting and a non-public fallback contact path.
 
+## [0.3.0] - 2026-08-27
+
+### Added
+
+- Define current-HEAD AI review as a first-class merge-governance invariant for AI-native repositories.
+- Add the reusable `actions/codex-review-gate` composite action for Codex review enforcement.
+- Add a two-phase review flow that requests Codex before validation and waits for current-HEAD evidence only after normal validation work has run.
+- Add repository evidence for the protected workflow that enforces AI review governance.
+- Document the solo-maintainer model: zero required human approvals for ordinary changes, current-HEAD Codex review, required review-thread resolution, and compatibility with auto-merge.
+
+### Changed
+
+- Treat any new PR commit as invalidating older Codex review evidence.
+- Match Codex review evidence to the full GitHub review `commit_id`; clean-review reactions are accepted only on a HEAD-specific review request.
+- Paginate GitHub review/comment/reaction reads and poll conservatively to stay within GitHub API budgets.
+
+### Security
+
+- Scope `issues: write` to the validation job only, for posting the HEAD-specific `@codex review` request.
+- Fail safely for fork and Dependabot contexts where the pull-request token cannot post comments; maintainers can supply the same exact-command, HEAD-scoped request manually.
+
 ## [0.2.0] - 2026-08-26
 
 ### Changed
