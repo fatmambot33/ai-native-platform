@@ -68,26 +68,27 @@ ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff
 ai-native upgrade AI_NATIVE_PLATFORM.yaml
 ```
 
-The migration command never silently downgrades a future manifest version. The v0.2 contract
-rewrites the removed `security_workflow` evidence key to `security_evidence` and updates an old
-v0.1 standard pin; the v0.2 validator itself does not accept the removed key. v0.3 adds repository
-merge governance without changing product-manifest version 1.
+The migration command never silently downgrades a future manifest version. For the v0.2 contract it
+also rewrites the removed `security_workflow` evidence key to `security_evidence` and updates an old
+v0.1 standard pin; the v0.2 validator itself does not accept the removed key.
 
 ## Distribution
 
 ### Reusable public workflow
 
-Public consumers can call the canonical workflow directly with no cross-repository secret:
+Public consumers can call the latest released canonical workflow directly with no cross-repository secret:
 
 ```yaml
 jobs:
   conformance:
-    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.3.0
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.2.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
 ```
 
-Pin an exact release or immutable commit SHA. Never use `@main` in a production consumer.
+Pin an exact release or immutable commit SHA. Never use `@main` in a production consumer. Unreleased
+framework capabilities, including the current-HEAD AI review gate, should be pinned to an immutable
+commit until they are included in the next release.
 
 ### Immutable vendored contract
 
@@ -100,9 +101,10 @@ access requires authentication. See `docs/DISTRIBUTION.md`.
 
 ## AI review governance
 
-v0.3 treats AI review as a pre-merge governance control. A protected pull request is eligible to merge
-only when normal CI and security gates pass, Codex has reviewed the current HEAD commit, and all
-actionable review threads are resolved. A new commit invalidates the older review evidence.
+The current unreleased framework adds AI review as a pre-merge governance control. A protected pull
+request is eligible to merge only when normal CI and security gates pass, Codex has reviewed the
+current HEAD commit, and all actionable review threads are resolved. A new commit invalidates the
+older review evidence.
 
 The reusable `actions/codex-review-gate` action supports a two-phase flow: request the review at the
 start of an already-required validation job, run ordinary validation while Codex works, then invoke
@@ -188,10 +190,10 @@ them. Later `main` changes cannot move the tag or replace release assets. See `d
 ## Public repository controls
 
 Public operation requires protected `main`, required quality and conformance checks, published CodeQL
-results, current-HEAD AI review, and review-thread resolution. The workflows remain safe to execute
-while the repository is private: CodeQL retains SARIF without uploading it and release provenance
-remains independently verifiable. Once public, CodeQL publication and GitHub-hosted build attestations
-activate automatically.
+results, current-HEAD AI review where enabled, and review-thread resolution. The workflows remain safe
+to execute while the repository is private: CodeQL retains SARIF without uploading it and release
+provenance remains independently verifiable. Once public, CodeQL publication and GitHub-hosted build
+attestations activate automatically.
 
 ## Repository structure
 
