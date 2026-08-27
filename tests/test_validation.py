@@ -16,6 +16,10 @@ from ai_native import (
     validate_manifest,
 )
 
+AI_REVIEW_ACTION = (
+    "fatmambot33/ai-native-platform/actions/codex-review-gate@"
+    "0000000000000000000000000000000000000000"
+)
 AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
   pull_request:
@@ -33,7 +37,7 @@ jobs:
       issues: write
       pull-requests: read
     steps:
-      - uses: fatmambot33/ai-native-platform/actions/codex-review-gate@0000000000000000000000000000000000000000
+      - uses: AI_REVIEW_ACTION
         with:
           mode: request
   codex-review:
@@ -43,10 +47,10 @@ jobs:
       issues: read
       pull-requests: read
     steps:
-      - uses: fatmambot33/ai-native-platform/actions/codex-review-gate@0000000000000000000000000000000000000000
+      - uses: AI_REVIEW_ACTION
         with:
           mode: wait
-"""
+""".replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
 
 
 def _template() -> dict:
