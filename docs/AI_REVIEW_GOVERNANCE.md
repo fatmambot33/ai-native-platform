@@ -19,17 +19,19 @@ The merge gate must not execute from code controlled by the pull request it is j
 
 Use a dedicated `pull_request_target` workflow whose definition comes from the protected base branch. That workflow must check out only the base revision (never pull-request code) and invoke `actions/codex-review-gate` from trusted base-branch contents or an immutable AI Native Platform commit.
 
-The reference workflow is `.github/workflows/codex-review.yml`. It starts as soon as a pull request is opened, synchronized, reopened, or marked ready, requests Codex immediately, and waits for current-HEAD evidence while ordinary PR CI runs in parallel.
+A `pull_request_target` workflow run is associated with the protected base revision, not the PR HEAD. The reference workflow therefore publishes an explicit `codex-review` commit status to `github.event.pull_request.head.sha`. That HEAD status—not the workflow job name—is the status check that branch rulesets require.
+
+The reference workflow is `.github/workflows/codex-review.yml`. It starts as soon as a pull request is opened, synchronized, reopened, or marked ready, marks the current HEAD review pending, requests Codex, waits for current-HEAD evidence while ordinary PR CI runs in parallel, then publishes `codex-review` success or failure on that same HEAD. PR-scoped concurrency cancels superseded waits when a newer commit is pushed.
 
 ## Reference action
 
-`actions/codex-review-gate` accepts only the real Codex connector identities, binds clean-review reactions to a HEAD-specific request, paginates GitHub API reads, and never treats an older review as sufficient for a newer HEAD.
+`actions/codex-review-gate` accepts only the real Codex connector identities, rejects dismissed reviews, binds clean-review reactions to a HEAD-specific request, paginates GitHub API reads, and never treats an older review as sufficient for a newer HEAD.
 
-A valid automated request is authored by `github-actions[bot]`, starts with the exact `@codex review` command, carries the current short SHA, and includes the full-SHA gate marker. A maintainer fallback request must also start with the exact command and include the current short SHA.
+A valid request is authored by `github-actions[bot]`, starts with the exact `@codex review` command, and includes the full current-HEAD gate marker. The trusted workflow owns request creation, including for fork and Dependabot pull requests, so editable maintainer comments are not accepted as clean-review evidence.
 
 ## GitHub protection
 
-The protected branch should require both the normal validation check and the trusted `codex-review` governance check, and should enable **Require conversation resolution before merging**. For a solo maintainer, the required approving-review count can remain zero.
+The protected branch should require the repository's normal CI/validation checks plus the `codex-review` HEAD status, and should enable **Require conversation resolution before merging**. For a solo maintainer, the required approving-review count can remain zero.
 
 The trusted workflow needs:
 
@@ -38,13 +40,14 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
+  statuses: write
 ```
 
-`issues: write` is used only to create the HEAD-scoped `@codex review` request. Review and reaction state are read from GitHub.
+`issues: write` is used only to create the HEAD-scoped `@codex review` request. `statuses: write` publishes the `codex-review` pending/success/failure state on the PR HEAD. Review and reaction state are read from GitHub.
 
 ## Bootstrap rule
 
-A repository cannot protect itself with a new `pull_request_target` workflow until that workflow exists on the protected base branch. The first adoption PR is therefore a one-time bootstrap: it must receive a current-HEAD Codex review and satisfy the repository's existing human-governance requirements before merge. Immediately after that merge, add the new `codex-review` check to the branch ruleset. Every later PR is then governed by base-branch code.
+A repository cannot protect itself with a new `pull_request_target` workflow until that workflow exists on the protected base branch. The first adoption PR is therefore a one-time bootstrap: it must receive a current-HEAD Codex review and satisfy the repository's existing human-governance requirements before merge. Immediately after that merge, add the new `codex-review` status to the branch ruleset. Every later PR is then governed by base-branch code.
 
 ## Codex setup
 
