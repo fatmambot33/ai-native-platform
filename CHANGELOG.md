@@ -20,7 +20,7 @@ All notable changes are documented here.
 - Make the unauthenticated, immutable public reusable workflow the primary documented distribution path.
 - Keep authenticated workflow access as an optional private-mirror path rather than the default.
 - Treat any new PR commit as invalidating older Codex review evidence.
-- Match Codex review evidence to the full GitHub review `commit_id`; clean-review reactions are accepted only on a HEAD-specific trusted request.
+- Match Codex review evidence to the full GitHub review `commit_id`; clean-review reactions are accepted only on an unedited HEAD-specific trusted request.
 - Paginate GitHub review/comment/reaction reads and poll conservatively to stay within GitHub API budgets.
 - Keep `evidence.paths.ai_review_workflow` opt-in for version-one manifests; when declared, require a real trusted workflow with immutable action pins and the canonical request/wait semantics.
 
@@ -32,6 +32,7 @@ All notable changes are documented here.
 - Keep the required `codex-review` pull-request job read-only; do not use `statuses: write` or `checks: write` as the merge trust boundary.
 - Protect governance workflow definitions with narrow CODEOWNERS rules and require code-owner review for those files after bootstrap.
 - Pin the reusable Codex gate action to immutable 40-character framework commits.
+- Reject edited request comments as clean-reaction evidence so stale Codex reactions cannot be rebound to a newer HEAD.
 - Remove editable maintainer-comment fallback evidence; only the trusted request path can create clean-reaction evidence.
 
 ## [0.2.0] - 2026-08-26
