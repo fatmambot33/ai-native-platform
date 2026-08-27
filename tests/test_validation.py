@@ -16,6 +16,38 @@ from ai_native import (
     validate_manifest,
 )
 
+AI_REVIEW_WORKFLOW = """name: Codex review governance
+on:
+  pull_request:
+  pull_request_target:
+permissions:
+  contents: read
+concurrency:
+  group: codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  request:
+    if: github.event_name == 'pull_request_target'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: fatmambot33/ai-native-platform/actions/codex-review-gate@0000000000000000000000000000000000000000
+        with:
+          mode: request
+  codex-review:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: fatmambot33/ai-native-platform/actions/codex-review-gate@0000000000000000000000000000000000000000
+        with:
+          mode: wait
+"""
+
 
 def _template() -> dict:
     return load_mapping(template_path())
@@ -34,6 +66,12 @@ def _materialize_evidence(root: Path, data: dict) -> None:
             else:
                 path.mkdir(parents=True, exist_ok=True)
                 (path / ".keep").write_text("evidence\n", encoding="utf-8")
+
+    ai_review = paths.get("ai_review_workflow")
+    if isinstance(ai_review, str):
+        path = root / ai_review
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(AI_REVIEW_WORKFLOW, encoding="utf-8")
 
 
 def test_starter_template_contract_is_valid() -> None:
@@ -87,13 +125,20 @@ def test_security_scan_requires_generic_security_evidence() -> None:
     assert "security_workflow" not in keys
 
 
-def test_ai_review_workflow_is_required_for_governed_self_improvement() -> None:
-    keys = required_evidence_keys(_template())
+def test_ai_review_workflow_is_opt_in_for_version_one_manifests(tmp_path: Path) -> None:
+    data = _template()
+    data["evidence"]["paths"].pop("ai_review_workflow")
+    assert "ai_review_workflow" not in required_evidence_keys(data)
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
 
-    assert "ai_review_workflow" in keys
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert findings == []
 
 
-def test_missing_ai_review_workflow_fails(tmp_path: Path) -> None:
+def test_missing_declared_ai_review_workflow_fails(tmp_path: Path) -> None:
     data = _template()
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
     manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -107,6 +152,35 @@ def test_missing_ai_review_workflow_fails(tmp_path: Path) -> None:
         and finding.path == "evidence.paths.ai_review_workflow"
         for finding in findings
     )
+
+
+def test_ai_review_evidence_must_be_a_trusted_workflow(tmp_path: Path) -> None:
+    data = _template()
+    _materialize_evidence(tmp_path, data)
+    data["evidence"]["paths"]["ai_review_workflow"] = "README.md"
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.ai_review_workflow_invalid"
+        and finding.path == "evidence.paths.ai_review_workflow"
+        for finding in findings
+    )
+
+
+def test_ai_review_workflow_rejects_writable_status_api(tmp_path: Path) -> None:
+    data = _template()
+    _materialize_evidence(tmp_path, data)
+    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
+    workflow.write_text(AI_REVIEW_WORKFLOW + "\n# statuses: write\n", encoding="utf-8")
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
 
 
 def test_workflow_security_evidence_passes(tmp_path: Path) -> None:
