@@ -8,7 +8,8 @@ The repository provides:
 2. profile-aware conformance rules;
 3. an installable CLI and reusable CI gate;
 4. governed, evidence-driven continuous improvement;
-5. reproducible release metadata, SBOM, provenance, and real-consumer verification.
+5. current-HEAD AI review governance for protected pull requests;
+6. reproducible release metadata, SBOM, provenance, and real-consumer verification.
 
 ## Profiles
 
@@ -67,9 +68,10 @@ ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff
 ai-native upgrade AI_NATIVE_PLATFORM.yaml
 ```
 
-The migration command never silently downgrades a future manifest version. For the v0.2 contract it
-also rewrites the removed `security_workflow` evidence key to `security_evidence` and updates an old
-v0.1 standard pin; the v0.2 validator itself does not accept the removed key.
+The migration command never silently downgrades a future manifest version. The v0.2 contract
+rewrites the removed `security_workflow` evidence key to `security_evidence` and updates an old
+v0.1 standard pin; the v0.2 validator itself does not accept the removed key. v0.3 adds repository
+merge governance without changing product-manifest version 1.
 
 ## Distribution
 
@@ -80,7 +82,7 @@ Public consumers can call the canonical workflow directly with no cross-reposito
 ```yaml
 jobs:
   conformance:
-    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.2.0
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.3.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
 ```
@@ -95,6 +97,23 @@ repository keeps an immutable registry and continuously revalidates every regist
 
 Private mirrors may pass the reusable workflow's optional `standard_token` when cross-repository read
 access requires authentication. See `docs/DISTRIBUTION.md`.
+
+## AI review governance
+
+v0.3 treats AI review as a pre-merge governance control. A protected pull request is eligible to merge
+only when normal CI and security gates pass, Codex has reviewed the current HEAD commit, and all
+actionable review threads are resolved. A new commit invalidates the older review evidence.
+
+The reusable `actions/codex-review-gate` action supports a two-phase flow: request the review at the
+start of an already-required validation job, run ordinary validation while Codex works, then invoke
+the action again to require current-HEAD evidence. Solo-maintainer repositories can keep the required
+human approval count at zero for ordinary changes and use GitHub auto-merge after all gates are green.
+Separate human-approval policy still applies to breaking, security, credential, public-API,
+permission-expanding, and release changes.
+
+Explicit re-review requires a Codex environment for the repository. See
+`docs/AI_REVIEW_GOVERNANCE.md` for the action, permissions, clean-review behavior, fork/Dependabot
+handling, and branch-protection requirements.
 
 ## Real consumers
 
@@ -168,15 +187,17 @@ them. Later `main` changes cannot move the tag or replace release assets. See `d
 
 ## Public repository controls
 
-Public operation requires protected `main`, required quality and conformance checks, and published
-CodeQL results. The workflows remain safe to execute while the repository is private: CodeQL retains
-SARIF without uploading it and release provenance remains independently verifiable. Once public,
-CodeQL publication and GitHub-hosted build attestations activate automatically.
+Public operation requires protected `main`, required quality and conformance checks, published CodeQL
+results, current-HEAD AI review, and review-thread resolution. The workflows remain safe to execute
+while the repository is private: CodeQL retains SARIF without uploading it and release provenance
+remains independently verifiable. Once public, CodeQL publication and GitHub-hosted build attestations
+activate automatically.
 
 ## Repository structure
 
 - `schemas/ai-native-platform.schema.json` — product contract
 - `standard/AI_NATIVE_PLATFORM.yaml` — standard identity and release gates
+- `actions/codex-review-gate/` — reusable current-HEAD Codex merge gate
 - `ai_native.py` — validator, migration library, SARIF, and CLI
 - `fixtures/` — passing, failing, and consumer fixtures
 - `consumers/registry.yaml` — immutable real-consumer proof
