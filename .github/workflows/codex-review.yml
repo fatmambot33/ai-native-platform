@@ -9,6 +9,10 @@ permissions:
   issues: write
   pull-requests: read
 
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   codex-review:
     if: github.event.pull_request.draft == false
