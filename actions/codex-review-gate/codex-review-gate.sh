@@ -6,6 +6,7 @@ set -euo pipefail
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
 
+MODE="${CODEX_REVIEW_MODE:-wait}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 SHORT_SHA="${HEAD_SHA:0:10}"
@@ -57,15 +58,13 @@ has_trigger_clean_reaction() {
     <<<"$reactions" >/dev/null
 }
 
-echo "Checking Codex evidence for current HEAD ${SHORT_SHA}."
-
-if has_matching_review; then
-  echo "Codex already reviewed current HEAD ${SHORT_SHA}."
-  exit 0
-fi
-
-find_trigger_comment
-if [[ -z "$COMMENT_ID" ]]; then
+request_review() {
+  find_trigger_comment
+  if [[ -n "$COMMENT_ID" ]]; then
+    echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
+    return 0
+  fi
+  local body response
   body="$(printf '@codex review\n\nAutomated AI Native Platform merge gate for `%s`.\n%s\n' "$SHORT_SHA" "$MARKER")"
   response="$(
     gh api --method POST \
@@ -74,10 +73,26 @@ if [[ -z "$COMMENT_ID" ]]; then
   )"
   COMMENT_ID="$(jq -r '.id' <<<"$response")"
   echo "Requested Codex review for current HEAD ${SHORT_SHA}."
-else
-  echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
-fi
+}
 
+case "$MODE" in
+  request)
+    if has_matching_review; then
+      echo "Codex already reviewed current HEAD ${SHORT_SHA}."
+      exit 0
+    fi
+    request_review
+    exit 0
+    ;;
+  wait)
+    ;;
+  *)
+    echo "::error::Unknown Codex review gate mode: ${MODE}."
+    exit 2
+    ;;
+esac
+
+echo "Waiting for Codex evidence for current HEAD ${SHORT_SHA}."
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while (( SECONDS < deadline )); do
   if has_matching_review; then
