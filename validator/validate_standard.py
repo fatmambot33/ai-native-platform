@@ -339,6 +339,11 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             "standard.migration_missing",
             "The CLI must provide deterministic manifest migrations.",
         ),
+        (
+            "_ai_review_workflow_findings",
+            "standard.ai_review_semantics_missing",
+            "The CLI must semantically validate declared AI-review workflows.",
+        ),
     ):
         if token not in validator_source:
             findings.append(Finding(code, message, "ai_native.py"))
@@ -357,12 +362,18 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         encoding="utf-8"
     )
     for token in (
+        "pull_request:",
         "pull_request_target:",
+        "codex-review:",
         "actions/codex-review-gate",
+        "mode: request",
+        "mode: wait",
         "issues: write",
+        "issues: read",
         "pull-requests: read",
-        "github.event.pull_request.base.sha",
-        "persist-credentials: false",
+        "github.event_name == 'pull_request_target'",
+        "github.event_name == 'pull_request'",
+        "cancel-in-progress: true",
     ):
         if token not in codex_review:
             findings.append(
@@ -370,6 +381,40 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
                     "standard.ai_review_workflow_incomplete",
                     f"AI review workflow must include {token!r}.",
                     ".github/workflows/codex-review.yml",
+                )
+            )
+    if re.search(r"(?:statuses|checks):\s*write", codex_review):
+        findings.append(
+            Finding(
+                "standard.ai_review_workflow_unsafe",
+                "AI review workflow must not publish its required result through writable status/check APIs.",
+                ".github/workflows/codex-review.yml",
+            )
+        )
+    if re.search(
+        r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@[0-9a-f]{40}",
+        codex_review,
+    ) is None:
+        findings.append(
+            Finding(
+                "standard.ai_review_action_unpinned",
+                "AI review workflow must pin the canonical action to an immutable commit SHA.",
+                ".github/workflows/codex-review.yml",
+            )
+        )
+
+    codeowners = (root / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    for token in (
+        "/.github/workflows/** @fatmambot33",
+        "/.github/CODEOWNERS @fatmambot33",
+        "/actions/codex-review-gate/** @fatmambot33",
+    ):
+        if token not in codeowners:
+            findings.append(
+                Finding(
+                    "standard.ai_review_codeowners_incomplete",
+                    f"Governance CODEOWNERS must include {token!r}.",
+                    ".github/CODEOWNERS",
                 )
             )
 
