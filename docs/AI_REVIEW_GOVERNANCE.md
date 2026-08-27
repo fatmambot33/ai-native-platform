@@ -46,7 +46,7 @@ Enable **Require review from Code Owners** in the protected-main pull-request ru
 
 `actions/codex-review-gate` accepts only the real Codex connector identities, rejects dismissed reviews, matches submitted reviews by the full GitHub review `commit_id`, paginates GitHub API reads, and never treats an older review as sufficient for a newer HEAD.
 
-A clean reaction is accepted only on the HEAD-specific request created by the trusted request job. Editable maintainer comments are not accepted as clean-review evidence.
+A clean reaction is accepted only on the HEAD-specific request created by the trusted request job. The request must still be unedited (`created_at == updated_at`), so a stale Codex reaction cannot be carried forward by rewriting an older GitHub Actions comment. Editable maintainer comments are not accepted as clean-review evidence.
 
 ## GitHub protection
 
