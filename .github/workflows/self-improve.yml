@@ -9,6 +9,11 @@ on:
         description: Maximum issues created in this run
         required: false
         default: '5'
+      use_ai:
+        description: Run optional paid LLM analysis
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,6 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AI_NATIVE_ISSUE_BUDGET: ${{ inputs.issue_budget || '5' }}
+      AI_NATIVE_LLM_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.use_ai) || vars.AI_NATIVE_LLM_ENABLED == 'true' }}
+      AI_NATIVE_LLM_MODEL: ${{ vars.AI_NATIVE_LLM_MODEL || 'gpt-5.6-luna' }}
+      AI_NATIVE_LLM_MIN_CONFIDENCE: ${{ vars.AI_NATIVE_LLM_MIN_CONFIDENCE || '0.80' }}
+      AI_NATIVE_LLM_MAX_INPUT_CHARS: ${{ vars.AI_NATIVE_LLM_MAX_INPUT_CHARS || '50000' }}
+      AI_NATIVE_LLM_MAX_OUTPUT_TOKENS: ${{ vars.AI_NATIVE_LLM_MAX_OUTPUT_TOKENS || '2000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,6 +40,18 @@ jobs:
       - run: python -m pip install --disable-pip-version-check -e '.[dev]'
       - name: Produce bounded structured findings
         run: python tools/discover_improvements.py > findings.json
+      - name: Install optional LLM dependency
+        if: env.AI_NATIVE_LLM_ENABLED == 'true'
+        run: python -m pip install --disable-pip-version-check -e '.[llm]'
+      - name: Add optional LLM findings
+        if: env.AI_NATIVE_LLM_ENABLED == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python tools/analyze_improvements.py \
+            --input findings.json \
+            --output combined-findings.json
+          mv combined-findings.json findings.json
       - name: Create one issue per root cause
         uses: actions/github-script@v7
         with:
@@ -47,6 +69,10 @@ jobs:
               const marker = `<!-- ai-native-fingerprint:${finding.fingerprint} -->`;
               if (openIssues.some(issue => (issue.body || '').includes(marker))) continue;
               const location = finding.path || 'repository';
+              const source = finding.source || 'deterministic';
+              const confidence = finding.confidence == null
+                ? 'n/a'
+                : Number(finding.confidence).toFixed(2);
               const title = `[AI discovery] ${finding.title}`.slice(0, 240);
               const body = [
                 marker,
@@ -54,6 +80,8 @@ jobs:
                 '',
                 `**Code:** \`${finding.code}\``,
                 `**Severity:** \`${finding.severity}\``,
+                `**Source:** \`${source}\``,
+                `**Confidence:** \`${confidence}\``,
                 `**Location:** \`${location}\``,
                 `**Fingerprint:** \`${finding.fingerprint}\``,
                 '',
