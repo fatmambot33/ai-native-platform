@@ -387,7 +387,10 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         findings.append(
             Finding(
                 "standard.ai_review_workflow_unsafe",
-                "AI review workflow must not publish its required result through writable status/check APIs.",
+                (
+                    "AI review workflow must not publish its required result "
+                    "through writable status/check APIs."
+                ),
                 ".github/workflows/codex-review.yml",
             )
         )
