@@ -6,10 +6,8 @@ set -euo pipefail
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
 
-HEAD_REPO="${HEAD_REPO:-$REPO}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
-REQUEST_ONLY="${CODEX_REVIEW_REQUEST_ONLY:-false}"
 SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
 COMMENT_ID=""
@@ -29,8 +27,7 @@ has_matching_review() {
   reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
   jq -e \
     --arg head "$HEAD_SHA" \
-    --arg short "$SHORT_SHA" \
-    "any(.[]; (${is_codex_login}) and ((.commit_id // \"\") == \$head or ((.body // \"\") | contains(\$short))))" \
+    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
     <<<"$reviews" >/dev/null
 }
 
@@ -40,20 +37,11 @@ find_trigger_comment() {
   COMMENT_ID="$(
     jq -r \
       --arg marker "$MARKER" \
-      --arg short "$SHORT_SHA" \
       '[
         .[]
+        | select((.user.login // "") == "github-actions[bot]")
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
-        | select((.body // "") | contains($short))
-        | select(
-            ((((.body // "") | contains($marker)) and ((.user.login // "") == "github-actions[bot]")))
-            or
-            ((((.body // "") | contains($marker)) | not) and (
-              (.author_association // "") == "OWNER"
-              or (.author_association // "") == "MEMBER"
-              or (.author_association // "") == "COLLABORATOR"
-            ))
-          )
+        | select((.body // "") | contains($marker))
       ] | last | .id // empty' \
       <<<"$comments"
   )"
@@ -77,27 +65,17 @@ if has_matching_review; then
 fi
 
 find_trigger_comment
-if [[ -z "$COMMENT_ID" && "$HEAD_REPO" == "$REPO" ]]; then
+if [[ -z "$COMMENT_ID" ]]; then
   body="$(printf '@codex review\n\nAutomated AI Native Platform merge gate for `%s`.\n%s\n' "$SHORT_SHA" "$MARKER")"
-  if response="$(
+  response="$(
     gh api --method POST \
       "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-      -f body="$body" 2>/dev/null
-  )"; then
-    COMMENT_ID="$(jq -r '.id' <<<"$response")"
-    echo "Requested Codex review for current HEAD ${SHORT_SHA}."
-  else
-    echo "::notice::This pull-request token cannot post the Codex request. A maintainer can post a comment whose first line is exactly '@codex review', with ${SHORT_SHA} on a later line, so the gate can bind the response to this HEAD."
-  fi
-elif [[ -z "$COMMENT_ID" ]]; then
-  echo "External PR detected. A maintainer can post a comment whose first line is exactly '@codex review', with ${SHORT_SHA} on a later line, to create HEAD-specific review evidence."
+      -f body="$body"
+  )"
+  COMMENT_ID="$(jq -r '.id' <<<"$response")"
+  echo "Requested Codex review for current HEAD ${SHORT_SHA}."
 else
   echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
-fi
-
-if [[ "$REQUEST_ONLY" == "true" || "$REQUEST_ONLY" == "1" ]]; then
-  echo "Codex review request phase complete for ${SHORT_SHA}."
-  exit 0
 fi
 
 deadline=$((SECONDS + TIMEOUT_SECONDS))
@@ -113,5 +91,5 @@ while (( SECONDS < deadline )); do
   sleep "$POLL_SECONDS"
 done
 
-echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}. If an automatic request could not be posted, add a comment whose first line is exactly '@codex review' and put ${SHORT_SHA} on a later line, then re-run this check after Codex responds."
+echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}."
 exit 1
