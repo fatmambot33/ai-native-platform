@@ -1,17 +1,16 @@
-# AI Native Platform v0.3.0
+# AI Native Platform v0.2.0
 
-A prerelease focused on solo-maintainer merge governance: Codex review becomes a current-HEAD merge gate instead of a post-merge advisory signal.
+A focused prerelease that makes security evidence implementation-neutral and keeps MCP opt-in.
 
 Highlights:
 
-- the canonical standard now requires current-HEAD AI review and review-thread resolution as release gates;
-- `actions/codex-review-gate` provides the reusable Codex enforcement implementation;
-- review requests start before validation so Codex latency overlaps ordinary CI work;
-- a review is accepted only when its GitHub `commit_id` matches the current pull-request HEAD, with the reviewed-SHA body retained only as a compatibility fallback;
-- clean reviews are accepted only from a reaction on the HEAD-specific `@codex review` request, preventing stale clean signals from authorizing a newer commit;
-- all review, comment, and reaction reads paginate, and polling defaults to 60 seconds to bound API usage;
-- read-only pull-request tokens fail safely: fork or Dependabot contexts can use a maintainer-posted exact `@codex review` command carrying the current short SHA on a later line;
-- protected branches can keep zero required human approvals for ordinary solo-maintainer changes while still requiring normal CI/security gates and GitHub conversation resolution;
-- permission-expanding, breaking, security, credential, public-API, and release changes remain subject to the framework's separate human-approval governance.
+- `evidence.paths.security_evidence` is now the canonical evidence key when `quality.security_scan: true`;
+- the v0.1 `security_workflow` key is intentionally removed with no compatibility alias;
+- native GitHub CodeQL, default setup, and repository-ruleset enforcement can be proven by a repository-local evidence document without a duplicate custom workflow;
+- workflow-backed security scanning remains fully supported by pointing `security_evidence` at the workflow;
+- `interfaces.mcp` is optional; consumers without MCP do not need to declare `mcp: false`;
+- `mcp: true` still requires MCP evidence, and `agent-tool` still requires either plugin or MCP;
+- starter manifest, schema, fixtures, validator tests, documentation, and registered consumers migrate together;
+- regression coverage verifies workflow security evidence, native-ruleset evidence, legacy-key rejection, and optional MCP declarations.
 
-Migration: configure a Codex environment for each repository that will use explicit re-review, invoke the pinned `actions/codex-review-gate` action from an already-required validation job, grant that job `issues: write` and `pull-requests: read`, keep GitHub's review-thread resolution rule enabled, and pin the v0.3 framework release or its immutable commit.
+Migration: rename `security_workflow` to `security_evidence`; omit `interfaces.mcp` when unused; preserve or replace the security evidence path as appropriate; and pin the v0.2 contract.
