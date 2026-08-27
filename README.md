@@ -87,7 +87,7 @@ jobs:
 ```
 
 Pin an exact release or immutable commit SHA. Never use `@main` in a production consumer. Unreleased
-framework capabilities, including the current-HEAD AI review gate, should be pinned to an immutable
+framework capabilities, including current-HEAD AI review governance, should be pinned to an immutable
 commit until they are included in the next release.
 
 ### Immutable vendored contract
@@ -106,16 +106,22 @@ request is eligible to merge only when normal CI and security gates pass, Codex 
 current HEAD commit, and all actionable review threads are resolved. A new commit invalidates the
 older review evidence.
 
-The reusable `actions/codex-review-gate` action supports a two-phase flow: request the review at the
-start of an already-required validation job, run ordinary validation while Codex works, then invoke
-the action again to require current-HEAD evidence. Solo-maintainer repositories can keep the required
-human approval count at zero for ordinary changes and use GitHub auto-merge after all gates are green.
-Separate human-approval policy still applies to breaking, security, credential, public-API,
+Enforcement runs from a dedicated `pull_request_target` workflow whose definition comes from the
+protected base branch. It never checks out pull-request code. That trusted workflow invokes
+`actions/codex-review-gate`, requests Codex immediately, and waits for current-HEAD evidence while the
+ordinary `pull_request` validation workflows run independently in parallel. This prevents a pull
+request from bypassing the gate by editing its own required CI workflow.
+
+Solo-maintainer repositories can keep the required human approval count at zero for ordinary changes
+and use GitHub auto-merge after CI, the trusted `codex-review` check, and review-thread resolution are
+green. Separate human-approval policy still applies to breaking, security, credential, public-API,
 permission-expanding, and release changes.
 
-Explicit re-review requires a Codex environment for the repository. See
-`docs/AI_REVIEW_GOVERNANCE.md` for the action, permissions, clean-review behavior, fork/Dependabot
-handling, and branch-protection requirements.
+Explicit re-review requires a Codex environment for the repository. The first PR that introduces the
+trusted workflow is a one-time bootstrap because `pull_request_target` uses the base-branch workflow;
+after that PR receives a current-HEAD Codex review and merges, add `codex-review` to the branch
+ruleset. See `docs/AI_REVIEW_GOVERNANCE.md` for the full trust model, permissions, clean-review
+behavior, fork/Dependabot handling, and bootstrap rule.
 
 ## Real consumers
 
@@ -200,6 +206,7 @@ attestations activate automatically.
 - `schemas/ai-native-platform.schema.json` — product contract
 - `standard/AI_NATIVE_PLATFORM.yaml` — standard identity and release gates
 - `actions/codex-review-gate/` — reusable current-HEAD Codex merge gate
+- `.github/workflows/codex-review.yml` — trusted base-branch AI-review governance
 - `ai_native.py` — validator, migration library, SARIF, and CLI
 - `fixtures/` — passing, failing, and consumer fixtures
 - `consumers/registry.yaml` — immutable real-consumer proof
