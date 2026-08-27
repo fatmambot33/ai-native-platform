@@ -74,10 +74,10 @@ if [[ -z "$COMMENT_ID" && "$HEAD_REPO" == "$REPO" ]]; then
     COMMENT_ID="$(jq -r '.id' <<<"$response")"
     echo "Requested Codex review for current HEAD ${SHORT_SHA}."
   else
-    echo "::notice::This pull-request token cannot post the Codex request. A maintainer can comment '@codex review ${SHORT_SHA}' and the gate will bind Codex's response to that HEAD."
+    echo "::notice::This pull-request token cannot post the Codex request. A maintainer can post a comment whose first line is exactly '@codex review', with ${SHORT_SHA} on a later line, so the gate can bind the response to this HEAD."
   fi
 elif [[ -z "$COMMENT_ID" ]]; then
-  echo "External PR detected. A maintainer can comment '@codex review ${SHORT_SHA}' to create HEAD-specific review evidence."
+  echo "External PR detected. A maintainer can post a comment whose first line is exactly '@codex review', with ${SHORT_SHA} on a later line, to create HEAD-specific review evidence."
 else
   echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
 fi
@@ -100,5 +100,5 @@ while (( SECONDS < deadline )); do
   sleep "$POLL_SECONDS"
 done
 
-echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}. Comment '@codex review ${SHORT_SHA}' on the PR if an automatic request could not be posted, then re-run this check after Codex responds."
+echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}. If an automatic request could not be posted, add a comment whose first line is exactly '@codex review' and put ${SHORT_SHA} on a later line, then re-run this check after Codex responds."
 exit 1
