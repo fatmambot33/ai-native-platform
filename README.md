@@ -118,6 +118,10 @@ The workflow definitions and CODEOWNERS file are themselves narrowly CODEOWNERS-
 still keep the general required human approval count at zero; only governance/workflow changes require
 code-owner review or an explicitly authorized owner bypass.
 
+Clean-review reactions are accepted only on the trusted HEAD-specific request, and only while that
+request remains unedited (`created_at == updated_at`). This prevents an old Codex 👍 from being reused
+by rewriting a previous request comment for a newer commit.
+
 Declaring `evidence.paths.ai_review_workflow` is opt-in for version-one manifests. If declared,
 `ai-native validate` checks that the evidence is a real `.github/workflows` YAML file with the
 canonical two-event request/wait semantics, immutable action pins, PR-scoped cancellation, and no
