@@ -87,6 +87,28 @@ def test_security_scan_requires_generic_security_evidence() -> None:
     assert "security_workflow" not in keys
 
 
+def test_ai_review_workflow_is_required_for_governed_self_improvement() -> None:
+    keys = required_evidence_keys(_template())
+
+    assert "ai_review_workflow" in keys
+
+
+def test_missing_ai_review_workflow_fails(tmp_path: Path) -> None:
+    data = _template()
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+    (tmp_path / data["evidence"]["paths"]["ai_review_workflow"]).unlink()
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.path_missing"
+        and finding.path == "evidence.paths.ai_review_workflow"
+        for finding in findings
+    )
+
+
 def test_workflow_security_evidence_passes(tmp_path: Path) -> None:
     data = _template()
     data["evidence"]["paths"]["security_evidence"] = ".github/workflows/codeql.yml"
