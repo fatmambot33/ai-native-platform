@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 GATE = Path("actions/codex-review-gate/codex-review-gate.sh")
 
 
