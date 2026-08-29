@@ -16,7 +16,7 @@ from ai_native import (
     validate_manifest,
 )
 
-AI_REVIEW_GATE_REF = "e1eb223d546407310b7a1aaeae2b7a703155434d"
+AI_REVIEW_GATE_REF = "83a0e44a9f7ed1b7cdeff106a5b671dadae79bc4"
 AI_REVIEW_ACTION = (
     "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 )
@@ -39,6 +39,7 @@ jobs:
     steps:
       - uses: AI_REVIEW_ACTION
         with:
+          token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
           mode: request
@@ -51,6 +52,7 @@ jobs:
     steps:
       - uses: AI_REVIEW_ACTION
         with:
+          token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
           mode: wait
@@ -88,6 +90,17 @@ def _materialize_evidence(root: Path, data: dict) -> None:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(AI_REVIEW_WORKFLOW, encoding="utf-8")
+
+
+def _validate_ai_review_text(tmp_path: Path, workflow_text: str) -> list:
+    data = _template()
+    _enable_ai_review(data)
+    _materialize_evidence(tmp_path, data)
+    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
+    workflow.write_text(workflow_text, encoding="utf-8")
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return validate_manifest(manifest, tmp_path)[1]
 
 
 def test_starter_template_contract_is_valid() -> None:
@@ -189,31 +202,28 @@ def test_ai_review_evidence_must_be_a_trusted_workflow(tmp_path: Path) -> None:
 
 
 def test_ai_review_workflow_rejects_writable_status_api(tmp_path: Path) -> None:
-    data = _template()
-    _enable_ai_review(data)
-    _materialize_evidence(tmp_path, data)
-    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
-    workflow.write_text(
+    findings = _validate_ai_review_text(
+        tmp_path,
         AI_REVIEW_WORKFLOW.replace(
             "permissions:\n  contents: read",
             "permissions:\n  contents: read\n  statuses: write",
             1,
         ),
-        encoding="utf-8",
     )
-    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
-    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
-    _, findings = validate_manifest(manifest, tmp_path)
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_write_all_permissions(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace("permissions:\n  contents: read", "permissions: write-all", 1),
+    )
 
     assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
 
 
 def test_ai_review_workflow_rejects_comment_spoofed_semantics(tmp_path: Path) -> None:
-    data = _template()
-    _enable_ai_review(data)
-    _materialize_evidence(tmp_path, data)
-    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
     fake_workflow = """name: fake
 on:
   workflow_dispatch:
@@ -235,28 +245,17 @@ jobs:
 # cancel-in-progress: true
 # uses: AI_REVIEW_ACTION
 """.replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
-    workflow.write_text(fake_workflow, encoding="utf-8")
-    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
-    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
-    _, findings = validate_manifest(manifest, tmp_path)
+    findings = _validate_ai_review_text(tmp_path, fake_workflow)
 
     assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
 
 
 def test_ai_review_workflow_rejects_untrusted_gate_ref(tmp_path: Path) -> None:
-    data = _template()
-    _enable_ai_review(data)
-    _materialize_evidence(tmp_path, data)
-    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
-    workflow.write_text(
+    findings = _validate_ai_review_text(
+        tmp_path,
         AI_REVIEW_WORKFLOW.replace(AI_REVIEW_GATE_REF, "0" * 40),
-        encoding="utf-8",
     )
-    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
-    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-
-    _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
         finding.code == "evidence.ai_review_workflow_invalid"
@@ -281,6 +280,99 @@ def test_ai_review_workflow_accepts_multiple_paths(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert findings == []
+
+
+def test_ai_review_workflow_requires_token_input(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace("          token: ${{ github.token }}\n", "", 1),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_pr_head_execution_in_request_job(tmp_path: Path) -> None:
+    unsafe = AI_REVIEW_WORKFLOW.replace(
+        "    steps:\n      - uses: " + AI_REVIEW_ACTION,
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "        with:\n"
+        "          ref: ${{ github.event.pull_request.head.sha }}\n"
+        "      - uses: "
+        + AI_REVIEW_ACTION,
+        1,
+    )
+
+    findings = _validate_ai_review_text(tmp_path, unsafe)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_skipped_gate_step(tmp_path: Path) -> None:
+    unsafe = AI_REVIEW_WORKFLOW.replace(
+        "      - uses: " + AI_REVIEW_ACTION,
+        "      - uses: " + AI_REVIEW_ACTION + "\n        if: false",
+        1,
+    )
+
+    findings = _validate_ai_review_text(tmp_path, unsafe)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_ignored_gate_failure(tmp_path: Path) -> None:
+    unsafe = AI_REVIEW_WORKFLOW.replace(
+        "      - uses: " + AI_REVIEW_ACTION,
+        "      - uses: " + AI_REVIEW_ACTION + "\n        continue-on-error: true",
+        1,
+    )
+
+    findings = _validate_ai_review_text(tmp_path, unsafe)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(
+            "if: github.event_name == 'pull_request'",
+            "if: github.event_name == 'pull_request' && false",
+        ),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_requires_synchronize_event(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace("  pull_request:\n", "  pull_request:\n    types: [opened]\n"),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_separates_event_concurrency(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(
+            "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}",
+            "codex-review-${{ github.event.pull_request.number }}",
+        ),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_codex_review_gate_checks_unresolved_threads() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+
+    assert "reviewThreads(first: 100" in script
+    assert "has_unresolved_codex_threads" in script
+    assert ".isResolved == false" in script
+    assert "all Codex review threads are resolved" in script
 
 
 def test_workflow_security_evidence_passes(tmp_path: Path) -> None:
