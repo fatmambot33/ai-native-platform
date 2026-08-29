@@ -51,7 +51,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "e1eb223d546407310b7a1aaeae2b7a703155434d",
+        "83a0e44a9f7ed1b7cdeff106a5b671dadae79bc4",
     }
 )
 
@@ -283,11 +283,17 @@ def _path_exists(root: Path, declaration: str) -> bool:
     return (root / declaration).exists()
 
 
-def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
-    """Return GitHub workflow event names despite PyYAML's YAML 1.1 `on` coercion."""
+def _workflow_events_value(workflow: Mapping[Any, Any]) -> Any:
+    """Return the parsed GitHub workflow event declaration."""
     events = workflow.get("on")
     if events is None and True in workflow:
         events = workflow.get(True)
+    return events
+
+
+def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
+    """Return GitHub workflow event names despite PyYAML's YAML 1.1 `on` coercion."""
+    events = _workflow_events_value(workflow)
     if isinstance(events, str):
         return {events}
     if isinstance(events, Mapping):
@@ -297,46 +303,101 @@ def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
     return set()
 
 
+def _event_runs_on_synchronize(workflow: Mapping[Any, Any], event_name: str) -> bool:
+    """Return whether an event is unrestricted or explicitly includes synchronize."""
+    events = _workflow_events_value(workflow)
+    if isinstance(events, str):
+        return events == event_name
+    if isinstance(events, Sequence) and not isinstance(events, (str, bytes, Mapping)):
+        return event_name in {str(item) for item in events}
+    if not isinstance(events, Mapping) or event_name not in events:
+        return False
+    config = events[event_name]
+    if config is None:
+        return True
+    if not isinstance(config, Mapping):
+        return False
+    types = config.get("types")
+    if types is None:
+        return True
+    if isinstance(types, str):
+        return types == "synchronize"
+    if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+        return "synchronize" in types
+    return False
+
+
 def _job_permissions(job: Mapping[str, Any]) -> Mapping[str, Any]:
     """Return a job permission mapping or an empty mapping."""
     permissions = job.get("permissions", {})
     return permissions if isinstance(permissions, Mapping) else {}
 
 
+def _normalize_condition(condition: Any) -> str:
+    """Normalize one GitHub Actions job condition for exact comparison."""
+    if not isinstance(condition, str):
+        return ""
+    normalized = condition.strip()
+    if normalized.startswith("${{") and normalized.endswith("}}"):
+        normalized = normalized[3:-2].strip()
+    return " ".join(normalized.split())
+
+
 def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
-    """Return whether a job condition binds execution to one GitHub event."""
-    condition = job.get("if")
-    return isinstance(condition, str) and f"github.event_name == '{event_name}'" in condition
+    """Return whether a job condition canonically binds execution to one event."""
+    condition = _normalize_condition(job.get("if"))
+    event_only = f"github.event_name == '{event_name}'"
+    draft_guard = f"{event_only} && github.event.pull_request.draft == false"
+    reverse_guard = f"github.event.pull_request.draft == false && {event_only}"
+    return condition in {event_only, draft_guard, reverse_guard}
 
 
 def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
-    """Return the canonical gate ref used by a request or wait job."""
+    """Return a trusted-shape canonical gate ref for a request or wait job."""
     steps = job.get("steps", [])
-    if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
+    if (
+        not isinstance(steps, Sequence)
+        or isinstance(steps, (str, bytes))
+        or len(steps) != 1
+        or not isinstance(steps[0], Mapping)
+    ):
         return None
+    step = steps[0]
+    if "if" in step or step.get("continue-on-error") not in (None, False):
+        return None
+    uses = step.get("uses")
+    inputs = step.get("with", {})
     prefix = f"{AI_REVIEW_ACTION}@"
-    for step in steps:
-        if not isinstance(step, Mapping):
-            continue
-        uses = step.get("uses")
-        inputs = step.get("with", {})
-        if not isinstance(uses, str) or not uses.startswith(prefix) or not isinstance(inputs, Mapping):
-            continue
-        if inputs.get("mode") != mode:
-            continue
-        if inputs.get("pr-number") != "${{ github.event.pull_request.number }}":
-            continue
-        if inputs.get("head-sha") != "${{ github.event.pull_request.head.sha }}":
-            continue
-        return uses[len(prefix) :]
-    return None
+    if not isinstance(uses, str) or not uses.startswith(prefix) or not isinstance(inputs, Mapping):
+        return None
+    required_inputs = {
+        "token": "${{ github.token }}",
+        "pr-number": "${{ github.event.pull_request.number }}",
+        "head-sha": "${{ github.event.pull_request.head.sha }}",
+        "mode": mode,
+    }
+    if any(inputs.get(key) != value for key, value in required_inputs.items()):
+        return None
+    return uses[len(prefix) :]
+
+
+def _permission_declaration_is_forbidden(value: Any) -> bool:
+    """Return whether one permissions declaration grants spoofable write APIs."""
+    if isinstance(value, str):
+        return value.lower() == "write-all"
+    if isinstance(value, Mapping):
+        return any(
+            str(key) in {"statuses", "checks"} and str(item).lower() == "write"
+            for key, item in value.items()
+        )
+    return False
 
 
 def _has_forbidden_write_permissions(value: Any) -> bool:
     """Return whether parsed workflow data grants writable status or check APIs."""
     if isinstance(value, Mapping):
         for key, item in value.items():
-            if str(key) in {"statuses", "checks"} and str(item).lower() == "write":
+            if str(key) == "permissions" and _permission_declaration_is_forbidden(item):
                 return True
             if _has_forbidden_write_permissions(item):
                 return True
@@ -398,6 +459,8 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     for event_name in ("pull_request", "pull_request_target"):
         if event_name not in events:
             failures.append(f"missing {event_name} event")
+        elif not _event_runs_on_synchronize(workflow, event_name):
+            failures.append(f"{event_name} must run on synchronize")
 
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, Mapping):
@@ -413,9 +476,9 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         wait = {}
 
     if not _uses_event(request, "pull_request_target"):
-        failures.append("request job is not bound to pull_request_target")
+        failures.append("request job condition must canonically bind pull_request_target")
     if not _uses_event(wait, "pull_request"):
-        failures.append("codex-review job is not bound to pull_request")
+        failures.append("codex-review job condition must canonically bind pull_request")
 
     request_permissions = _job_permissions(request)
     if request_permissions.get("issues") != "write":
@@ -433,21 +496,28 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     concurrency = workflow.get("concurrency", {})
     if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not True:
         failures.append("concurrency must cancel superseded runs")
-    elif "github.event.pull_request.number" not in str(concurrency.get("group", "")):
-        failures.append("concurrency must be scoped to the pull request")
+    else:
+        group = str(concurrency.get("group", ""))
+        if "github.event.pull_request.number" not in group:
+            failures.append("concurrency must be scoped to the pull request")
+        if "github.event_name" not in group:
+            failures.append("concurrency must separate request and wait event runs")
 
     request_ref = _gate_ref(request, "request")
     wait_ref = _gate_ref(wait, "wait")
     for label, reference in (("request", request_ref), ("wait", wait_ref)):
         if reference is None:
-            failures.append(f"{label} job must invoke the canonical gate with current PR inputs")
+            failures.append(
+                f"{label} job must contain exactly one unconditional canonical gate step "
+                "with token and current PR inputs"
+            )
         elif reference not in TRUSTED_AI_REVIEW_GATE_REFS:
             failures.append(f"{label} job uses an untrusted gate revision {reference}")
     if request_ref is not None and wait_ref is not None and request_ref != wait_ref:
         failures.append("request and wait jobs must pin the same gate revision")
 
     if _has_forbidden_write_permissions(workflow):
-        failures.append("workflow must not grant statuses: write or checks: write")
+        failures.append("workflow must not grant statuses/checks write or write-all permissions")
 
     if failures:
         return [
