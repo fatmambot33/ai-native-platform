@@ -1,0 +1,104 @@
+"""Regression tests for trusted AI-review workflow governance."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from ai_native import _single_ai_review_workflow_findings
+
+GATE_REF = "83a0e44a9f7ed1b7cdeff106a5b671dadae79bc4"
+ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
+WORKFLOW = f"""name: Codex review governance
+on:
+  pull_request:
+  pull_request_target:
+permissions:
+  contents: read
+concurrency:
+  group: codex-review-${{{{ github.event_name }}}}-${{{{ github.event.pull_request.number }}}}
+  cancel-in-progress: true
+jobs:
+  request:
+    if: github.event_name == 'pull_request_target'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: {ACTION}
+        with:
+          token: ${{{{ github.token }}}}
+          pr-number: ${{{{ github.event.pull_request.number }}}}
+          head-sha: ${{{{ github.event.pull_request.head.sha }}}}
+          mode: request
+  codex-review:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: {ACTION}
+        with:
+          token: ${{{{ github.token }}}}
+          pr-number: ${{{{ github.event.pull_request.number }}}}
+          head-sha: ${{{{ github.event.pull_request.head.sha }}}}
+          mode: wait
+"""
+
+
+def _write_repository(root: Path, workflow: str = WORKFLOW, *, codeowners: bool = True) -> None:
+    workflow_path = root / ".github" / "workflows" / "codex-review.yml"
+    workflow_path.parent.mkdir(parents=True, exist_ok=True)
+    workflow_path.write_text(workflow, encoding="utf-8")
+    if codeowners:
+        owners = root / ".github" / "CODEOWNERS"
+        owners.write_text("/.github/workflows/** @repository-owner\n", encoding="utf-8")
+
+
+def _findings(root: Path) -> list:
+    return _single_ai_review_workflow_findings(".github/workflows/codex-review.yml", root)
+
+
+def test_trusted_review_workflow_baseline_passes(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+
+    assert _findings(tmp_path) == []
+
+
+def test_review_gate_rejects_needs_dependency(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "  codex-review:\n    if:",
+        "  codex-review:\n    needs: bypass\n    if:",
+    )
+    _write_repository(tmp_path, workflow)
+
+    findings = _findings(tmp_path)
+
+    assert any("must not declare needs dependencies" in finding.message for finding in findings)
+
+
+def test_review_gate_rejects_additional_jobs(tmp_path: Path) -> None:
+    workflow = WORKFLOW + """  extra-target-job:
+    if: github.event_name == 'pull_request_target'
+    permissions:
+      contents: write
+    steps:
+      - run: echo unsafe
+"""
+    _write_repository(tmp_path, workflow)
+
+    findings = _findings(tmp_path)
+
+    assert any("workflow must contain only request and codex-review jobs" in finding.message for finding in findings)
+
+
+def test_review_gate_requires_codeowners_coverage(tmp_path: Path) -> None:
+    _write_repository(tmp_path, codeowners=False)
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    if codeowners.exists():
+        codeowners.unlink()
+
+    findings = _findings(tmp_path)
+
+    assert any("must be covered by .github/CODEOWNERS" in finding.message for finding in findings)
