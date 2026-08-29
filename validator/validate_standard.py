@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from ai_native import (  # noqa: E402, I001
     STANDARD_REPOSITORY,
+    TRUSTED_AI_REVIEW_GATE_REFS,
     Finding,
     contract_findings,
     load_mapping,
@@ -47,6 +48,8 @@ REQUIRED_FILES = (
     "templates/AI_NATIVE_PLATFORM.yaml",
     "templates/validate.yml",
     "templates/AGENTS.md",
+    "actions/codex-review-gate/action.yml",
+    "actions/codex-review-gate/codex-review-gate.sh",
     "docs/GOVERNANCE.md",
     "docs/AI_REVIEW_GOVERNANCE.md",
     "docs/DISTRIBUTION.md",
@@ -394,14 +397,23 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
                 ".github/workflows/codex-review.yml",
             )
         )
-    if re.search(
-        r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@[0-9a-f]{40}",
+    action_refs = re.findall(
+        r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@([0-9a-f]{40})",
         codex_review,
-    ) is None:
+    )
+    if not action_refs:
         findings.append(
             Finding(
                 "standard.ai_review_action_unpinned",
                 "AI review workflow must pin the canonical action to an immutable commit SHA.",
+                ".github/workflows/codex-review.yml",
+            )
+        )
+    elif any(reference not in TRUSTED_AI_REVIEW_GATE_REFS for reference in action_refs):
+        findings.append(
+            Finding(
+                "standard.ai_review_action_untrusted",
+                "AI review workflow must use a trusted canonical gate revision.",
                 ".github/workflows/codex-review.yml",
             )
         )
@@ -411,6 +423,14 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         "/.github/workflows/** @fatmambot33",
         "/.github/CODEOWNERS @fatmambot33",
         "/actions/codex-review-gate/** @fatmambot33",
+        "/schemas/** @fatmambot33",
+        "/standard/** @fatmambot33",
+        "/ai_native.py @fatmambot33",
+        "/validator/** @fatmambot33",
+        "/templates/** @fatmambot33",
+        "/docs/GOVERNANCE.md @fatmambot33",
+        "/pyproject.toml @fatmambot33",
+        "/tools/release_artifacts.py @fatmambot33",
     ):
         if token not in codeowners:
             findings.append(
