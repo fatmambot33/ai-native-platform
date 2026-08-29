@@ -16,9 +16,9 @@ from ai_native import (
     validate_manifest,
 )
 
+AI_REVIEW_GATE_REF = "e1eb223d546407310b7a1aaeae2b7a703155434d"
 AI_REVIEW_ACTION = (
-    "fatmambot33/ai-native-platform/actions/codex-review-gate@"
-    "0000000000000000000000000000000000000000"
+    "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 )
 AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
@@ -39,6 +39,8 @@ jobs:
     steps:
       - uses: AI_REVIEW_ACTION
         with:
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
           mode: request
   codex-review:
     if: github.event_name == 'pull_request'
@@ -49,12 +51,18 @@ jobs:
     steps:
       - uses: AI_REVIEW_ACTION
         with:
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
           mode: wait
 """.replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
 
 
 def _template() -> dict:
     return load_mapping(template_path())
+
+
+def _enable_ai_review(data: dict, value: str | list[str] = ".github/workflows/codex-review.yml") -> None:
+    data["evidence"]["paths"]["ai_review_workflow"] = value
 
 
 def _materialize_evidence(root: Path, data: dict) -> None:
@@ -72,8 +80,9 @@ def _materialize_evidence(root: Path, data: dict) -> None:
                 (path / ".keep").write_text("evidence\n", encoding="utf-8")
 
     ai_review = paths.get("ai_review_workflow")
-    if isinstance(ai_review, str):
-        path = root / ai_review
+    ai_reviews = [ai_review] if isinstance(ai_review, str) else ai_review or []
+    for relative in ai_reviews:
+        path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(AI_REVIEW_WORKFLOW, encoding="utf-8")
 
@@ -82,6 +91,7 @@ def test_starter_template_contract_is_valid() -> None:
     data = _template()
 
     assert "mcp" not in data["interfaces"]
+    assert "ai_review_workflow" not in data["evidence"]["paths"]
     assert contract_findings(data) == []
 
 
@@ -131,7 +141,6 @@ def test_security_scan_requires_generic_security_evidence() -> None:
 
 def test_ai_review_workflow_is_opt_in_for_version_one_manifests(tmp_path: Path) -> None:
     data = _template()
-    data["evidence"]["paths"].pop("ai_review_workflow")
     assert "ai_review_workflow" not in required_evidence_keys(data)
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
     manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -144,6 +153,7 @@ def test_ai_review_workflow_is_opt_in_for_version_one_manifests(tmp_path: Path) 
 
 def test_missing_declared_ai_review_workflow_fails(tmp_path: Path) -> None:
     data = _template()
+    _enable_ai_review(data)
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
     manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     _materialize_evidence(tmp_path, data)
@@ -160,6 +170,7 @@ def test_missing_declared_ai_review_workflow_fails(tmp_path: Path) -> None:
 
 def test_ai_review_evidence_must_be_a_trusted_workflow(tmp_path: Path) -> None:
     data = _template()
+    _enable_ai_review(data)
     _materialize_evidence(tmp_path, data)
     data["evidence"]["paths"]["ai_review_workflow"] = "README.md"
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
@@ -176,15 +187,74 @@ def test_ai_review_evidence_must_be_a_trusted_workflow(tmp_path: Path) -> None:
 
 def test_ai_review_workflow_rejects_writable_status_api(tmp_path: Path) -> None:
     data = _template()
+    _enable_ai_review(data)
     _materialize_evidence(tmp_path, data)
     workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
-    workflow.write_text(AI_REVIEW_WORKFLOW + "\n# statuses: write\n", encoding="utf-8")
+    workflow.write_text(
+        AI_REVIEW_WORKFLOW.replace("permissions:\n  contents: read", "permissions:\n  contents: read\n  statuses: write", 1),
+        encoding="utf-8",
+    )
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
     manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_comment_spoofed_semantics(tmp_path: Path) -> None:
+    data = _template()
+    _enable_ai_review(data)
+    _materialize_evidence(tmp_path, data)
+    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
+    workflow.write_text(
+        """name: fake\non:\n  workflow_dispatch:\njobs:\n  unrelated:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo safe\n# pull_request:\n# pull_request_target:\n# codex-review:\n# mode: request\n# mode: wait\n# issues: write\n# issues: read\n# pull-requests: read\n# github.event_name == 'pull_request_target'\n# github.event_name == 'pull_request'\n# cancel-in-progress: true\n# uses: AI_REVIEW_ACTION\n""".replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_untrusted_gate_ref(tmp_path: Path) -> None:
+    data = _template()
+    _enable_ai_review(data)
+    _materialize_evidence(tmp_path, data)
+    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
+    workflow.write_text(
+        AI_REVIEW_WORKFLOW.replace(AI_REVIEW_GATE_REF, "0" * 40),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.ai_review_workflow_invalid" and "untrusted gate revision" in finding.message
+        for finding in findings
+    )
+
+
+def test_ai_review_workflow_accepts_multiple_paths(tmp_path: Path) -> None:
+    data = _template()
+    _enable_ai_review(
+        data,
+        [
+            ".github/workflows/codex-review.yml",
+            ".github/workflows/codex-review-secondary.yml",
+        ],
+    )
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert findings == []
 
 
 def test_workflow_security_evidence_passes(tmp_path: Path) -> None:
@@ -285,3 +355,4 @@ def test_init_copies_canonical_template(tmp_path: Path) -> None:
     generated = load_mapping(Path(Args.destination))
     assert generated["version"] == 1
     assert "mcp" not in generated["interfaces"]
+    assert "ai_review_workflow" not in generated["evidence"]["paths"]
