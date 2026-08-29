@@ -48,21 +48,11 @@ PROFILE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     ),
 }
 BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
-AI_REVIEW_ACTION_PATTERN = re.compile(
-    r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@[0-9a-f]{40}"
-)
-AI_REVIEW_REQUIRED_TOKENS = (
-    "pull_request:",
-    "pull_request_target:",
-    "codex-review:",
-    "mode: request",
-    "mode: wait",
-    "issues: write",
-    "issues: read",
-    "pull-requests: read",
-    "github.event_name == 'pull_request_target'",
-    "github.event_name == 'pull_request'",
-    "cancel-in-progress: true",
+AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
+TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
+    {
+        "e1eb223d546407310b7a1aaeae2b7a703155434d",
+    }
 )
 
 
@@ -293,18 +283,71 @@ def _path_exists(root: Path, declaration: str) -> bool:
     return (root / declaration).exists()
 
 
-def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
-    """Validate an explicitly declared trusted AI-review workflow."""
-    path_name = "evidence.paths.ai_review_workflow"
-    if not isinstance(value, str):
-        return [
-            Finding(
-                "evidence.ai_review_workflow_invalid",
-                "AI review evidence must be one workflow path string.",
-                path_name,
-            )
-        ]
+def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
+    """Return GitHub workflow event names despite PyYAML's YAML 1.1 `on` coercion."""
+    events = workflow.get("on")
+    if events is None and True in workflow:
+        events = workflow.get(True)
+    if isinstance(events, str):
+        return {events}
+    if isinstance(events, Mapping):
+        return {str(key) for key in events}
+    if isinstance(events, Sequence) and not isinstance(events, (str, bytes)):
+        return {str(item) for item in events}
+    return set()
 
+
+def _job_permissions(job: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return a job permission mapping or an empty mapping."""
+    permissions = job.get("permissions", {})
+    return permissions if isinstance(permissions, Mapping) else {}
+
+
+def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
+    """Return whether a job condition binds execution to one GitHub event."""
+    condition = job.get("if")
+    return isinstance(condition, str) and f"github.event_name == '{event_name}'" in condition
+
+
+def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
+    """Return the canonical gate ref used by a request or wait job."""
+    steps = job.get("steps", [])
+    if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
+        return None
+    prefix = f"{AI_REVIEW_ACTION}@"
+    for step in steps:
+        if not isinstance(step, Mapping):
+            continue
+        uses = step.get("uses")
+        inputs = step.get("with", {})
+        if not isinstance(uses, str) or not uses.startswith(prefix) or not isinstance(inputs, Mapping):
+            continue
+        if inputs.get("mode") != mode:
+            continue
+        if inputs.get("pr-number") != "${{ github.event.pull_request.number }}":
+            continue
+        if inputs.get("head-sha") != "${{ github.event.pull_request.head.sha }}":
+            continue
+        return uses[len(prefix) :]
+    return None
+
+
+def _has_forbidden_write_permissions(value: Any) -> bool:
+    """Return whether parsed workflow data grants writable status or check APIs."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if str(key) in {"statuses", "checks"} and str(item).lower() == "write":
+                return True
+            if _has_forbidden_write_permissions(item):
+                return True
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_has_forbidden_write_permissions(item) for item in value)
+    return False
+
+
+def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
+    """Validate one explicitly declared trusted AI-review workflow."""
+    path_name = "evidence.paths.ai_review_workflow"
     relative = Path(value)
     if (
         relative.is_absolute()
@@ -321,8 +364,8 @@ def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
             )
         ]
 
-    workflow = root / relative
-    if not workflow.is_file():
+    workflow_path = root / relative
+    if not workflow_path.is_file():
         return [
             Finding(
                 "evidence.path_missing",
@@ -331,34 +374,111 @@ def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
             )
         ]
 
-    text = workflow.read_text(encoding="utf-8")
-    missing = [token for token in AI_REVIEW_REQUIRED_TOKENS if token not in text]
-    if missing:
+    try:
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                f"AI review workflow YAML is invalid: {exc}",
+                path_name,
+            )
+        ]
+    if not isinstance(workflow, Mapping):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow must contain a YAML mapping.",
+                path_name,
+            )
+        ]
+
+    failures: list[str] = []
+    events = _workflow_events(workflow)
+    for event_name in ("pull_request", "pull_request_target"):
+        if event_name not in events:
+            failures.append(f"missing {event_name} event")
+
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, Mapping):
+        failures.append("jobs must be a mapping")
+        jobs = {}
+    request = jobs.get("request", {})
+    wait = jobs.get("codex-review", {})
+    if not isinstance(request, Mapping):
+        failures.append("request job is missing")
+        request = {}
+    if not isinstance(wait, Mapping):
+        failures.append("codex-review job is missing")
+        wait = {}
+
+    if not _uses_event(request, "pull_request_target"):
+        failures.append("request job is not bound to pull_request_target")
+    if not _uses_event(wait, "pull_request"):
+        failures.append("codex-review job is not bound to pull_request")
+
+    request_permissions = _job_permissions(request)
+    if request_permissions.get("issues") != "write":
+        failures.append("request job must grant issues: write")
+    if request_permissions.get("pull-requests") != "read":
+        failures.append("request job must grant pull-requests: read")
+    wait_permissions = _job_permissions(wait)
+    if wait_permissions.get("issues") != "read":
+        failures.append("codex-review job must grant issues: read")
+    if wait_permissions.get("pull-requests") != "read":
+        failures.append("codex-review job must grant pull-requests: read")
+    if any(str(permission).lower() == "write" for permission in wait_permissions.values()):
+        failures.append("codex-review job must remain read-only")
+
+    concurrency = workflow.get("concurrency", {})
+    if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not True:
+        failures.append("concurrency must cancel superseded runs")
+    elif "github.event.pull_request.number" not in str(concurrency.get("group", "")):
+        failures.append("concurrency must be scoped to the pull request")
+
+    request_ref = _gate_ref(request, "request")
+    wait_ref = _gate_ref(wait, "wait")
+    for label, reference in (("request", request_ref), ("wait", wait_ref)):
+        if reference is None:
+            failures.append(f"{label} job must invoke the canonical gate with current PR inputs")
+        elif reference not in TRUSTED_AI_REVIEW_GATE_REFS:
+            failures.append(f"{label} job uses an untrusted gate revision {reference}")
+    if request_ref is not None and wait_ref is not None and request_ref != wait_ref:
+        failures.append("request and wait jobs must pin the same gate revision")
+
+    if _has_forbidden_write_permissions(workflow):
+        failures.append("workflow must not grant statuses: write or checks: write")
+
+    if failures:
         return [
             Finding(
                 "evidence.ai_review_workflow_invalid",
                 "AI review workflow is missing trusted governance semantics: "
-                + ", ".join(missing),
-                path_name,
-            )
-        ]
-    if AI_REVIEW_ACTION_PATTERN.search(text) is None:
-        return [
-            Finding(
-                "evidence.ai_review_workflow_invalid",
-                "AI review workflow must pin the canonical gate action to a 40-character commit SHA.",
-                path_name,
-            )
-        ]
-    if re.search(r"(?:statuses|checks):\s*write", text):
-        return [
-            Finding(
-                "evidence.ai_review_workflow_invalid",
-                "The required PR review job must not rely on writable status/check APIs.",
+                + "; ".join(failures),
                 path_name,
             )
         ]
     return []
+
+
+def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
+    """Validate every explicitly declared trusted AI-review workflow."""
+    path_name = "evidence.paths.ai_review_workflow"
+    declarations = _as_paths(value)
+    expected = 1 if isinstance(value, str) else len(value) if isinstance(value, Sequence) else 0
+    if not declarations or len(declarations) != expected:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review evidence must be a workflow path string or a nonempty list of strings.",
+                path_name,
+            )
+        ]
+
+    findings: list[Finding] = []
+    for declaration in declarations:
+        findings.extend(_single_ai_review_workflow_findings(declaration, root))
+    return findings
 
 
 def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
