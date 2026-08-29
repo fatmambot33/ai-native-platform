@@ -1,7 +1,5 @@
 """Regression tests for the Codex review gate trust boundary."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 
