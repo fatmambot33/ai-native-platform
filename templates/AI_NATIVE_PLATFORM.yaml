@@ -75,8 +75,8 @@ evidence:
     schemas: schemas
     docs: docs
     examples: examples
-    # Optional for version-one manifests. If declared, this trusted workflow is semantically validated.
-    ai_review_workflow: .github/workflows/codex-review.yml
+    # AI review governance is unreleased and intentionally omitted from the v0.2 starter.
+    # Consumers may opt in by declaring ai_review_workflow while pinned to an implementing SHA.
     # May point to a security workflow or a document proving native GitHub CodeQL, default setup, or ruleset enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md
     self_improvement_workflow: .github/workflows/self-improve.yml
