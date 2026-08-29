@@ -406,6 +406,35 @@ def _has_forbidden_write_permissions(value: Any) -> bool:
     return False
 
 
+def _codeowners_covers_path(root: Path, relative: Path) -> bool:
+    """Return whether the repository CODEOWNERS assigns the declared workflow."""
+    codeowners = root / ".github" / "CODEOWNERS"
+    if not codeowners.is_file():
+        return False
+
+    relative_name = relative.as_posix().lstrip("/")
+    covered = False
+    for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        pattern, owners = parts[0], parts[1:]
+        if not owners or not all(owner.startswith("@") for owner in owners):
+            continue
+        normalized = pattern.lstrip("/")
+        if normalized.endswith("/"):
+            normalized += "**"
+        try:
+            if Path(relative_name).match(normalized):
+                covered = True
+        except ValueError:
+            continue
+    return covered
+
+
 def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
     """Validate one explicitly declared trusted AI-review workflow."""
     path_name = "evidence.paths.ai_review_workflow"
@@ -466,6 +495,13 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     if not isinstance(jobs, Mapping):
         failures.append("jobs must be a mapping")
         jobs = {}
+    else:
+        extra_jobs = sorted(str(name) for name in jobs if str(name) not in {"request", "codex-review"})
+        if extra_jobs:
+            failures.append(
+                "workflow must contain only request and codex-review jobs; extra jobs: "
+                + ", ".join(extra_jobs)
+            )
     request = jobs.get("request", {})
     wait = jobs.get("codex-review", {})
     if not isinstance(request, Mapping):
@@ -474,6 +510,11 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     if not isinstance(wait, Mapping):
         failures.append("codex-review job is missing")
         wait = {}
+
+    if "needs" in request:
+        failures.append("request job must not declare needs dependencies")
+    if "needs" in wait:
+        failures.append("codex-review job must not declare needs dependencies")
 
     if not _uses_event(request, "pull_request_target"):
         failures.append("request job condition must canonically bind pull_request_target")
@@ -518,6 +559,9 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     if _has_forbidden_write_permissions(workflow):
         failures.append("workflow must not grant statuses/checks write or write-all permissions")
+
+    if not _codeowners_covers_path(root, relative):
+        failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
 
     if failures:
         return [
