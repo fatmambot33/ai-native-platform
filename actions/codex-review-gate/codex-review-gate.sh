@@ -12,6 +12,8 @@ POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
 COMMENT_ID=""
+OWNER="${REPO%%/*}"
+NAME="${REPO#*/}"
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -30,6 +32,55 @@ has_matching_review() {
     --arg head "$HEAD_SHA" \
     "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
     <<<"$reviews" >/dev/null
+}
+
+has_unresolved_codex_threads() {
+  local query cursor response has_next
+  query='query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100, after: $cursor) {
+          nodes {
+            isResolved
+            comments(first: 1) {
+              nodes { author { login } }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }'
+  cursor=""
+  while true; do
+    local -a args=(
+      graphql
+      -f "query=${query}"
+      -F "owner=${OWNER}"
+      -F "name=${NAME}"
+      -F "number=${PR_NUMBER}"
+    )
+    if [[ -n "$cursor" ]]; then
+      args+=(-f "cursor=${cursor}")
+    fi
+    response="$(gh api "${args[@]}")"
+    if jq -e '
+      any(
+        .data.repository.pullRequest.reviewThreads.nodes[]?;
+        (.isResolved == false)
+        and (
+          (.comments.nodes[0].author.login // "") == "chatgpt-codex-connector"
+          or (.comments.nodes[0].author.login // "") == "chatgpt-codex-connector[bot]"
+        )
+      )
+    ' <<<"$response" >/dev/null; then
+      return 0
+    fi
+    has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' <<<"$response")"
+    [[ "$has_next" == "true" ]] || return 1
+    cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // empty' <<<"$response")"
+    [[ -n "$cursor" ]] || return 1
+  done
 }
 
 find_trigger_comment() {
@@ -57,6 +108,17 @@ has_trigger_clean_reaction() {
   jq -e \
     "any(.[]; (${is_codex_login}) and .content == \"+1\")" \
     <<<"$reactions" >/dev/null
+}
+
+has_clear_codex_evidence() {
+  if has_matching_review || has_trigger_clean_reaction; then
+    if has_unresolved_codex_threads; then
+      echo "Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+      return 1
+    fi
+    return 0
+  fi
+  return 1
 }
 
 request_review() {
@@ -93,19 +155,15 @@ case "$MODE" in
     ;;
 esac
 
-echo "Waiting for Codex evidence for current HEAD ${SHORT_SHA}."
+echo "Waiting for clean Codex evidence for current HEAD ${SHORT_SHA}."
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while (( SECONDS < deadline )); do
-  if has_matching_review; then
-    echo "Codex review matches current HEAD ${SHORT_SHA}."
-    exit 0
-  fi
-  if has_trigger_clean_reaction; then
-    echo "Codex reported no findings for current HEAD ${SHORT_SHA}."
+  if has_clear_codex_evidence; then
+    echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
     exit 0
   fi
   sleep "$POLL_SECONDS"
 done
 
-echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}."
+echo "::error::Codex has not completed a clean, fully resolved review of current HEAD ${SHORT_SHA}."
 exit 1
