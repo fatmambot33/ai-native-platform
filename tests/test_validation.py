@@ -61,7 +61,10 @@ def _template() -> dict:
     return load_mapping(template_path())
 
 
-def _enable_ai_review(data: dict, value: str | list[str] = ".github/workflows/codex-review.yml") -> None:
+def _enable_ai_review(
+    data: dict,
+    value: str | list[str] = ".github/workflows/codex-review.yml",
+) -> None:
     data["evidence"]["paths"]["ai_review_workflow"] = value
 
 
@@ -191,7 +194,11 @@ def test_ai_review_workflow_rejects_writable_status_api(tmp_path: Path) -> None:
     _materialize_evidence(tmp_path, data)
     workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
     workflow.write_text(
-        AI_REVIEW_WORKFLOW.replace("permissions:\n  contents: read", "permissions:\n  contents: read\n  statuses: write", 1),
+        AI_REVIEW_WORKFLOW.replace(
+            "permissions:\n  contents: read",
+            "permissions:\n  contents: read\n  statuses: write",
+            1,
+        ),
         encoding="utf-8",
     )
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
@@ -207,10 +214,28 @@ def test_ai_review_workflow_rejects_comment_spoofed_semantics(tmp_path: Path) ->
     _enable_ai_review(data)
     _materialize_evidence(tmp_path, data)
     workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
-    workflow.write_text(
-        """name: fake\non:\n  workflow_dispatch:\njobs:\n  unrelated:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo safe\n# pull_request:\n# pull_request_target:\n# codex-review:\n# mode: request\n# mode: wait\n# issues: write\n# issues: read\n# pull-requests: read\n# github.event_name == 'pull_request_target'\n# github.event_name == 'pull_request'\n# cancel-in-progress: true\n# uses: AI_REVIEW_ACTION\n""".replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION),
-        encoding="utf-8",
-    )
+    fake_workflow = """name: fake
+on:
+  workflow_dispatch:
+jobs:
+  unrelated:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo safe
+# pull_request:
+# pull_request_target:
+# codex-review:
+# mode: request
+# mode: wait
+# issues: write
+# issues: read
+# pull-requests: read
+# github.event_name == 'pull_request_target'
+# github.event_name == 'pull_request'
+# cancel-in-progress: true
+# uses: AI_REVIEW_ACTION
+""".replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
+    workflow.write_text(fake_workflow, encoding="utf-8")
     manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
     manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
@@ -234,7 +259,8 @@ def test_ai_review_workflow_rejects_untrusted_gate_ref(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
-        finding.code == "evidence.ai_review_workflow_invalid" and "untrusted gate revision" in finding.message
+        finding.code == "evidence.ai_review_workflow_invalid"
+        and "untrusted gate revision" in finding.message
         for finding in findings
     )
 
