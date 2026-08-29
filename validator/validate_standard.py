@@ -22,6 +22,7 @@ from ai_native import (  # noqa: E402, I001
     STANDARD_REPOSITORY,
     TRUSTED_AI_REVIEW_GATE_REFS,
     Finding,
+    _single_ai_review_workflow_findings,
     contract_findings,
     load_mapping,
     load_schema,
@@ -361,42 +362,17 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             )
         )
 
-    codex_review = (root / ".github/workflows/codex-review.yml").read_text(
-        encoding="utf-8"
-    )
-    for token in (
-        "pull_request:",
-        "pull_request_target:",
-        "codex-review:",
-        "actions/codex-review-gate",
-        "mode: request",
-        "mode: wait",
-        "issues: write",
-        "issues: read",
-        "pull-requests: read",
-        "github.event_name == 'pull_request_target'",
-        "github.event_name == 'pull_request'",
-        "cancel-in-progress: true",
-    ):
-        if token not in codex_review:
-            findings.append(
-                Finding(
-                    "standard.ai_review_workflow_incomplete",
-                    f"AI review workflow must include {token!r}.",
-                    ".github/workflows/codex-review.yml",
-                )
-            )
-    if re.search(r"(?:statuses|checks):\s*write", codex_review):
+    workflow_path = ".github/workflows/codex-review.yml"
+    for item in _single_ai_review_workflow_findings(workflow_path, root):
         findings.append(
             Finding(
-                "standard.ai_review_workflow_unsafe",
-                (
-                    "AI review workflow must not publish its required result "
-                    "through writable status/check APIs."
-                ),
-                ".github/workflows/codex-review.yml",
+                "standard.ai_review_workflow_incomplete",
+                item.message,
+                workflow_path,
             )
         )
+
+    codex_review = (root / workflow_path).read_text(encoding="utf-8")
     action_refs = re.findall(
         r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@([0-9a-f]{40})",
         codex_review,
@@ -406,7 +382,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             Finding(
                 "standard.ai_review_action_unpinned",
                 "AI review workflow must pin the canonical action to an immutable commit SHA.",
-                ".github/workflows/codex-review.yml",
+                workflow_path,
             )
         )
     elif any(reference not in TRUSTED_AI_REVIEW_GATE_REFS for reference in action_refs):
@@ -414,7 +390,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             Finding(
                 "standard.ai_review_action_untrusted",
                 "AI review workflow must use a trusted canonical gate revision.",
-                ".github/workflows/codex-review.yml",
+                workflow_path,
             )
         )
 
