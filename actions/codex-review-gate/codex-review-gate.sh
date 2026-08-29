@@ -83,7 +83,7 @@ has_unresolved_codex_threads() {
   done
 }
 
-find_trigger_comment() {
+find_bot_trigger_comment() {
   local comments
   comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
   COMMENT_ID="$(
@@ -98,6 +98,35 @@ find_trigger_comment() {
       ] | last | .id // empty' \
       <<<"$comments"
   )"
+}
+
+find_bootstrap_trigger_comment() {
+  local comments
+  comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
+  COMMENT_ID="$(
+    jq -r \
+      --arg marker "$MARKER" \
+      '[
+        .[]
+        | select(
+            (.author_association // "") == "OWNER"
+            or (.author_association // "") == "MEMBER"
+            or (.author_association // "") == "COLLABORATOR"
+          )
+        | select((.created_at // "") == (.updated_at // ""))
+        | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
+        | select((.body // "") | contains($marker))
+      ] | last | .id // empty' \
+      <<<"$comments"
+  )"
+}
+
+find_trigger_comment() {
+  COMMENT_ID=""
+  find_bot_trigger_comment
+  if [[ -z "$COMMENT_ID" ]]; then
+    find_bootstrap_trigger_comment
+  fi
 }
 
 has_trigger_clean_reaction() {
@@ -122,7 +151,7 @@ has_clear_codex_evidence() {
 }
 
 request_review() {
-  find_trigger_comment
+  find_bot_trigger_comment
   if [[ -n "$COMMENT_ID" ]]; then
     echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
     return 0
