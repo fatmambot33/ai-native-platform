@@ -75,7 +75,7 @@ def test_review_gate_rejects_needs_dependency(tmp_path: Path) -> None:
 
     findings = _findings(tmp_path)
 
-    assert any("must not declare needs dependencies" in finding.message for finding in findings)
+    assert any("must not declare needs dependencies" in item.message for item in findings)
 
 
 def test_review_gate_rejects_additional_jobs(tmp_path: Path) -> None:
@@ -90,7 +90,10 @@ def test_review_gate_rejects_additional_jobs(tmp_path: Path) -> None:
 
     findings = _findings(tmp_path)
 
-    assert any("workflow must contain only request and codex-review jobs" in finding.message for finding in findings)
+    assert any(
+        "workflow must contain only request and codex-review jobs" in item.message
+        for item in findings
+    )
 
 
 def test_review_gate_requires_codeowners_coverage(tmp_path: Path) -> None:
@@ -101,4 +104,4 @@ def test_review_gate_requires_codeowners_coverage(tmp_path: Path) -> None:
 
     findings = _findings(tmp_path)
 
-    assert any("must be covered by .github/CODEOWNERS" in finding.message for finding in findings)
+    assert any("must be covered by .github/CODEOWNERS" in item.message for item in findings)
