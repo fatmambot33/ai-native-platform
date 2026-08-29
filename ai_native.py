@@ -52,6 +52,7 @@ AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
         "83a0e44a9f7ed1b7cdeff106a5b671dadae79bc4",
+        "f3fa6d6b183771e088274558d414de3472765c84",
     }
 )
 
