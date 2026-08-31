@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Request Codex review of current HEAD
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@f3fa6d6b183771e088274558d414de3472765c84
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@cd1f286222a286508c962288671c1f6c97b52d95
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require Codex review of current HEAD and resolved threads
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@f3fa6d6b183771e088274558d414de3472765c84
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@cd1f286222a286508c962288671c1f6c97b52d95
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
