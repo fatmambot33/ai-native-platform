@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import _single_ai_review_workflow_findings
 
-GATE_REF = "83a0e44a9f7ed1b7cdeff106a5b671dadae79bc4"
+GATE_REF = "cd1f286222a286508c962288671c1f6c97b52d95"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
@@ -101,6 +101,20 @@ def test_review_gate_requires_codeowners_coverage(tmp_path: Path) -> None:
     codeowners = tmp_path / ".github" / "CODEOWNERS"
     if codeowners.exists():
         codeowners.unlink()
+
+    findings = _findings(tmp_path)
+
+    assert any("must be covered by .github/CODEOWNERS" in item.message for item in findings)
+
+
+def test_review_gate_rejects_ownerless_last_codeowners_override(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    codeowners.write_text(
+        "/.github/workflows/** @repository-owner\n"
+        "/.github/workflows/codex-review.yml\n",
+        encoding="utf-8",
+    )
 
     findings = _findings(tmp_path)
 
