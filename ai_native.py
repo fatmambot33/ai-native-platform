@@ -51,8 +51,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "83a0e44a9f7ed1b7cdeff106a5b671dadae79bc4",
-        "f3fa6d6b183771e088274558d414de3472765c84",
+        "cd1f286222a286508c962288671c1f6c97b52d95",
     }
 )
 
@@ -408,32 +407,34 @@ def _has_forbidden_write_permissions(value: Any) -> bool:
 
 
 def _codeowners_covers_path(root: Path, relative: Path) -> bool:
-    """Return whether the repository CODEOWNERS assigns the declared workflow."""
+    """Return whether the effective CODEOWNERS rule assigns the declared workflow."""
     codeowners = root / ".github" / "CODEOWNERS"
     if not codeowners.is_file():
         return False
 
     relative_name = relative.as_posix().lstrip("/")
-    covered = False
+    effective_owners: list[str] | None = None
     for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()
-        if len(parts) < 2:
+        if not parts:
             continue
         pattern, owners = parts[0], parts[1:]
-        if not owners or not all(owner.startswith("@") for owner in owners):
-            continue
         normalized = pattern.lstrip("/")
         if normalized.endswith("/"):
             normalized += "**"
         try:
-            if Path(relative_name).match(normalized):
-                covered = True
+            matches = Path(relative_name).match(normalized)
         except ValueError:
             continue
-    return covered
+        if matches:
+            effective_owners = owners
+
+    return bool(effective_owners) and all(
+        owner.startswith("@") for owner in effective_owners
+    )
 
 
 def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
