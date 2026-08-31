@@ -5,6 +5,7 @@ set -euo pipefail
 : "${REPO:?REPO is required}"
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
+: "${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH is required}"
 
 MODE="${CODEX_REVIEW_MODE:-wait}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
@@ -14,6 +15,17 @@ MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
 COMMENT_ID=""
 OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
+HEAD_ACTIVE_SINCE="$(
+  jq -er \
+    --arg head "$HEAD_SHA" \
+    'select((.pull_request.head.sha // "") == $head)
+     | .pull_request.updated_at
+     | select(type == "string" and length > 0)' \
+    "$GITHUB_EVENT_PATH"
+)" || {
+  echo "::error::Unable to prove when current PR HEAD ${SHORT_SHA} became active from the GitHub event payload."
+  exit 2
+}
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -63,7 +75,25 @@ has_unresolved_codex_threads() {
     if [[ -n "$cursor" ]]; then
       args+=(-f "cursor=${cursor}")
     fi
-    response="$(gh api "${args[@]}")"
+    if ! response="$(gh api "${args[@]}")"; then
+      echo "::error::Unable to query Codex review-thread state from GitHub GraphQL."
+      return 2
+    fi
+    if ! jq -e '
+      ((.errors? // []) | length == 0)
+      and (.data.repository.pullRequest.reviewThreads.nodes | type == "array")
+      and (.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage | type == "boolean")
+      and (
+        (.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false)
+        or (
+          (.data.repository.pullRequest.reviewThreads.pageInfo.endCursor | type == "string")
+          and (.data.repository.pullRequest.reviewThreads.pageInfo.endCursor | length > 0)
+        )
+      )
+    ' <<<"$response" >/dev/null; then
+      echo "::error::GitHub returned malformed or errored Codex review-thread data."
+      return 2
+    fi
     if jq -e '
       any(
         .data.repository.pullRequest.reviewThreads.nodes[]?;
@@ -76,10 +106,13 @@ has_unresolved_codex_threads() {
     ' <<<"$response" >/dev/null; then
       return 0
     fi
-    has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' <<<"$response")"
+    has_next="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<<"$response")"
     [[ "$has_next" == "true" ]] || return 1
-    cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // empty' <<<"$response")"
-    [[ -n "$cursor" ]] || return 1
+    cursor="$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<<"$response")"
+    if [[ -z "$cursor" || "$cursor" == "null" ]]; then
+      echo "::error::GitHub review-thread pagination omitted a required cursor."
+      return 2
+    fi
   done
 }
 
@@ -89,10 +122,12 @@ find_bot_trigger_comment() {
   COMMENT_ID="$(
     jq -r \
       --arg marker "$MARKER" \
+      --arg active_since "$HEAD_ACTIVE_SINCE" \
       '[
         .[]
         | select((.user.login // "") == "github-actions[bot]")
         | select((.created_at // "") == (.updated_at // ""))
+        | select((.created_at // "") >= $active_since)
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
       ] | last | .id // empty' \
@@ -106,6 +141,7 @@ find_bootstrap_trigger_comment() {
   COMMENT_ID="$(
     jq -r \
       --arg marker "$MARKER" \
+      --arg active_since "$HEAD_ACTIVE_SINCE" \
       '[
         .[]
         | select(
@@ -114,6 +150,7 @@ find_bootstrap_trigger_comment() {
             or (.author_association // "") == "COLLABORATOR"
           )
         | select((.created_at // "") == (.updated_at // ""))
+        | select((.created_at // "") >= $active_since)
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
       ] | last | .id // empty' \
@@ -144,8 +181,14 @@ has_clear_codex_evidence() {
     if has_unresolved_codex_threads; then
       echo "Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
       return 1
+    else
+      local thread_status=$?
+      if [[ "$thread_status" -eq 1 ]]; then
+        return 0
+      fi
+      echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+      return 1
     fi
-    return 0
   fi
   return 1
 }
