@@ -210,7 +210,10 @@ def test_codeowners_root_anchor_does_not_match_nested_basename(tmp_path: Path) -
     assert _codeowners_effective_owners(
         tmp_path, Path(".github/workflows/codex-review.yml")
     ) is None
-    assert any("must be covered by .github/CODEOWNERS" in item.message for item in _findings(tmp_path))
+    findings = _findings(tmp_path)
+    assert any(
+        "must be covered by .github/CODEOWNERS" in item.message for item in findings
+    )
 
 
 def test_codeowners_ignores_commented_rules(tmp_path: Path) -> None:
