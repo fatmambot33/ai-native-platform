@@ -62,6 +62,13 @@ def test_reusable_codex_gate_implementation_is_required() -> None:
     assert "actions/codex-review-gate/codex-review-gate.sh" in REQUIRED_FILES
 
 
+def test_standard_self_validation_uses_effective_codeowners_rules() -> None:
+    source = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+
+    assert "_codeowners_effective_owners" in source
+    assert "token not in codeowners" not in source
+
+
 def test_real_consumer_registry_is_immutable_and_diverse() -> None:
     registry = yaml.safe_load(
         (ROOT / "consumers/registry.yaml").read_text(encoding="utf-8")
