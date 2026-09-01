@@ -478,6 +478,9 @@
             "examples": {
               "$ref": "#/$defs/pathValue"
             },
+            "ai_review_workflow": {
+              "$ref": "#/$defs/pathValue"
+            },
             "security_evidence": {
               "$ref": "#/$defs/pathValue"
             },

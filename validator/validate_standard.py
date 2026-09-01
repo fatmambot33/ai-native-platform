@@ -20,7 +20,10 @@ if str(ROOT) not in sys.path:
 
 from ai_native import (  # noqa: E402, I001
     STANDARD_REPOSITORY,
+    TRUSTED_AI_REVIEW_GATE_REFS,
     Finding,
+    _codeowners_effective_owners,
+    _single_ai_review_workflow_findings,
     contract_findings,
     load_mapping,
     load_schema,
@@ -47,7 +50,10 @@ REQUIRED_FILES = (
     "templates/AI_NATIVE_PLATFORM.yaml",
     "templates/validate.yml",
     "templates/AGENTS.md",
+    "actions/codex-review-gate/action.yml",
+    "actions/codex-review-gate/codex-review-gate.sh",
     "docs/GOVERNANCE.md",
+    "docs/AI_REVIEW_GOVERNANCE.md",
     "docs/DISTRIBUTION.md",
     "docs/RELEASE.md",
     "tests/test_validation.py",
@@ -63,6 +69,7 @@ REQUIRED_FILES = (
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/workflows/validate.yml",
+    ".github/workflows/codex-review.yml",
     ".github/workflows/quality.yml",
     ".github/workflows/codeql.yml",
     ".github/workflows/self-improve.yml",
@@ -337,6 +344,11 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             "standard.migration_missing",
             "The CLI must provide deterministic manifest migrations.",
         ),
+        (
+            "_ai_review_workflow_findings",
+            "standard.ai_review_semantics_missing",
+            "The CLI must semantically validate declared AI-review workflows.",
+        ),
     ):
         if token not in validator_source:
             findings.append(Finding(code, message, "ai_native.py"))
@@ -350,6 +362,63 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
                 "README.md",
             )
         )
+
+    workflow_path = ".github/workflows/codex-review.yml"
+    for item in _single_ai_review_workflow_findings(workflow_path, root):
+        findings.append(
+            Finding(
+                "standard.ai_review_workflow_incomplete",
+                item.message,
+                workflow_path,
+            )
+        )
+
+    codex_review = (root / workflow_path).read_text(encoding="utf-8")
+    action_refs = re.findall(
+        r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@([0-9a-f]{40})",
+        codex_review,
+    )
+    if not action_refs:
+        findings.append(
+            Finding(
+                "standard.ai_review_action_unpinned",
+                "AI review workflow must pin the canonical action to an immutable commit SHA.",
+                workflow_path,
+            )
+        )
+    elif any(reference not in TRUSTED_AI_REVIEW_GATE_REFS for reference in action_refs):
+        findings.append(
+            Finding(
+                "standard.ai_review_action_untrusted",
+                "AI review workflow must use a trusted canonical gate revision.",
+                workflow_path,
+            )
+        )
+
+    governed_paths = (
+        ".github/workflows/codex-review.yml",
+        ".github/CODEOWNERS",
+        "actions/codex-review-gate/action.yml",
+        "schemas/ai-native-platform.schema.json",
+        "standard/AI_NATIVE_PLATFORM.yaml",
+        "ai_native.py",
+        "validator/validate_standard.py",
+        "templates/AI_NATIVE_PLATFORM.yaml",
+        "docs/GOVERNANCE.md",
+        "pyproject.toml",
+        "tools/release_artifacts.py",
+    )
+    for relative in governed_paths:
+        owners = _codeowners_effective_owners(root, Path(relative))
+        if not owners or "@fatmambot33" not in owners:
+            findings.append(
+                Finding(
+                    "standard.ai_review_codeowners_incomplete",
+                    f"Governance CODEOWNERS must actively protect {relative!r} "
+                    "with @fatmambot33.",
+                    ".github/CODEOWNERS",
+                )
+            )
 
     release_workflow = (root / ".github/workflows/release.yml").read_text(
         encoding="utf-8"

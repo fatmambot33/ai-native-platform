@@ -48,6 +48,12 @@ PROFILE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     ),
 }
 BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
+AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
+TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
+    {
+        "cd1f286222a286508c962288671c1f6c97b52d95",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -277,6 +283,412 @@ def _path_exists(root: Path, declaration: str) -> bool:
     return (root / declaration).exists()
 
 
+def _workflow_events_value(workflow: Mapping[Any, Any]) -> Any:
+    """Return the parsed GitHub workflow event declaration."""
+    events = workflow.get("on")
+    if events is None and True in workflow:
+        events = workflow.get(True)
+    return events
+
+
+def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
+    """Return GitHub workflow event names despite PyYAML's YAML 1.1 `on` coercion."""
+    events = _workflow_events_value(workflow)
+    if isinstance(events, str):
+        return {events}
+    if isinstance(events, Mapping):
+        return {str(key) for key in events}
+    if isinstance(events, Sequence) and not isinstance(events, (str, bytes)):
+        return {str(item) for item in events}
+    return set()
+
+
+def _event_runs_on_synchronize(workflow: Mapping[Any, Any], event_name: str) -> bool:
+    """Return whether an event is unrestricted or explicitly includes synchronize."""
+    events = _workflow_events_value(workflow)
+    if isinstance(events, str):
+        return events == event_name
+    if isinstance(events, Sequence) and not isinstance(events, (str, bytes, Mapping)):
+        return event_name in {str(item) for item in events}
+    if not isinstance(events, Mapping) or event_name not in events:
+        return False
+    config = events[event_name]
+    if config is None:
+        return True
+    if not isinstance(config, Mapping):
+        return False
+    types = config.get("types")
+    if types is None:
+        return True
+    if isinstance(types, str):
+        return types == "synchronize"
+    if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+        return "synchronize" in types
+    return False
+
+
+def _event_runs_on_review_dismissal(workflow: Mapping[Any, Any]) -> bool:
+    """Return whether pull-request review dismissal re-runs governance."""
+    events = _workflow_events_value(workflow)
+    if not isinstance(events, Mapping) or "pull_request_review" not in events:
+        return False
+    config = events["pull_request_review"]
+    if config is None:
+        return True
+    if not isinstance(config, Mapping):
+        return False
+    types = config.get("types")
+    if types is None:
+        return True
+    if isinstance(types, str):
+        return types == "dismissed"
+    if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+        return "dismissed" in types
+    return False
+
+
+def _job_permissions(job: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return a job permission mapping or an empty mapping."""
+    permissions = job.get("permissions", {})
+    return permissions if isinstance(permissions, Mapping) else {}
+
+
+def _normalize_condition(condition: Any) -> str:
+    """Normalize one GitHub Actions job condition for exact comparison."""
+    if not isinstance(condition, str):
+        return ""
+    normalized = condition.strip()
+    if normalized.startswith("${{") and normalized.endswith("}}"):
+        normalized = normalized[3:-2].strip()
+    return " ".join(normalized.split())
+
+
+def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
+    """Return whether a job condition canonically binds execution to one event."""
+    condition = _normalize_condition(job.get("if"))
+    event_only = f"github.event_name == '{event_name}'"
+    draft_guard = f"{event_only} && github.event.pull_request.draft == false"
+    reverse_guard = f"github.event.pull_request.draft == false && {event_only}"
+    return condition in {event_only, draft_guard, reverse_guard}
+
+
+def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
+    """Return whether the wait job runs on PR updates and review dismissal."""
+    condition = _normalize_condition(job.get("if"))
+    event_guard = "(github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+    draft_guard = f"{event_guard} && github.event.pull_request.draft == false"
+    reverse_guard = f"github.event.pull_request.draft == false && {event_guard}"
+    return condition in {event_guard, draft_guard, reverse_guard}
+
+
+def _positive_integer_input(value: Any) -> bool:
+    """Return whether an action input represents a positive integer."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value > 0
+    if isinstance(value, str) and value.isdigit():
+        return int(value) > 0
+    return False
+
+
+def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
+    """Return a trusted-shape canonical gate ref for a request or wait job."""
+    if job.get("continue-on-error") not in (None, False):
+        return None
+    steps = job.get("steps", [])
+    if (
+        not isinstance(steps, Sequence)
+        or isinstance(steps, (str, bytes))
+        or len(steps) != 1
+        or not isinstance(steps[0], Mapping)
+    ):
+        return None
+    step = steps[0]
+    if "if" in step or step.get("continue-on-error") not in (None, False):
+        return None
+    uses = step.get("uses")
+    inputs = step.get("with", {})
+    prefix = f"{AI_REVIEW_ACTION}@"
+    if not isinstance(uses, str) or not uses.startswith(prefix) or not isinstance(inputs, Mapping):
+        return None
+    required_inputs = {
+        "token": "${{ github.token }}",
+        "pr-number": "${{ github.event.pull_request.number }}",
+        "head-sha": "${{ github.event.pull_request.head.sha }}",
+        "mode": mode,
+    }
+    if any(inputs.get(key) != value for key, value in required_inputs.items()):
+        return None
+    for key in ("timeout-seconds", "poll-seconds"):
+        if key in inputs and not _positive_integer_input(inputs[key]):
+            return None
+    return uses[len(prefix) :]
+
+
+def _permission_declaration_is_forbidden(value: Any) -> bool:
+    """Return whether one permissions declaration grants spoofable write APIs."""
+    if isinstance(value, str):
+        return value.lower() == "write-all"
+    if isinstance(value, Mapping):
+        return any(
+            str(key) in {"statuses", "checks"} and str(item).lower() == "write"
+            for key, item in value.items()
+        )
+    return False
+
+
+def _has_forbidden_write_permissions(value: Any) -> bool:
+    """Return whether parsed workflow data grants writable status or check APIs."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if str(key) == "permissions" and _permission_declaration_is_forbidden(item):
+                return True
+            if _has_forbidden_write_permissions(item):
+                return True
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_has_forbidden_write_permissions(item) for item in value)
+    return False
+
+
+def _codeowners_pattern_regex(pattern: str) -> re.Pattern[str] | None:
+    """Compile the supported CODEOWNERS glob subset with root anchoring."""
+    if not pattern or pattern.startswith("!"):
+        return None
+    anchored = pattern.startswith("/")
+    normalized = pattern[1:] if anchored else pattern
+    if not normalized:
+        return None
+    if normalized.endswith("/"):
+        normalized += "**"
+    has_slash = "/" in normalized
+    pieces: list[str] = []
+    index = 0
+    while index < len(normalized):
+        character = normalized[index]
+        if character == "*":
+            if index + 1 < len(normalized) and normalized[index + 1] == "*":
+                index += 2
+                if index < len(normalized) and normalized[index] == "/":
+                    pieces.append("(?:.*/)?")
+                    index += 1
+                else:
+                    pieces.append(".*")
+                continue
+            pieces.append("[^/]*")
+        elif character == "?":
+            pieces.append("[^/]")
+        else:
+            pieces.append(re.escape(character))
+        index += 1
+    prefix = "^"
+    if not anchored and not has_slash:
+        prefix += "(?:.*/)?"
+    try:
+        return re.compile(prefix + "".join(pieces) + "$")
+    except re.error:
+        return None
+
+
+def _codeowners_effective_owners(root: Path, relative: Path) -> list[str] | None:
+    """Return owners from the effective last matching active CODEOWNERS rule."""
+    codeowners = root / ".github" / "CODEOWNERS"
+    if not codeowners.is_file():
+        return None
+
+    relative_name = relative.as_posix().lstrip("/")
+    effective_owners: list[str] | None = None
+    for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+        pattern, owners = parts[0], parts[1:]
+        matcher = _codeowners_pattern_regex(pattern)
+        if matcher is not None and matcher.fullmatch(relative_name):
+            effective_owners = owners
+    return effective_owners
+
+
+def _codeowners_covers_path(root: Path, relative: Path) -> bool:
+    """Return whether the effective CODEOWNERS rule assigns valid owners."""
+    effective_owners = _codeowners_effective_owners(root, relative)
+    return bool(effective_owners) and all(
+        owner.startswith("@") for owner in effective_owners
+    )
+
+
+def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
+    """Validate one explicitly declared trusted AI-review workflow."""
+    path_name = "evidence.paths.ai_review_workflow"
+    relative = Path(value)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or len(relative.parts) < 3
+        or relative.parts[0:2] != (".github", "workflows")
+        or relative.suffix not in {".yml", ".yaml"}
+    ):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review evidence must point to a .github/workflows YAML file.",
+                path_name,
+            )
+        ]
+
+    workflow_path = root / relative
+    if not workflow_path.is_file():
+        return [
+            Finding(
+                "evidence.path_missing",
+                f"No repository evidence found for: {value}",
+                path_name,
+            )
+        ]
+
+    try:
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                f"AI review workflow YAML is invalid: {exc}",
+                path_name,
+            )
+        ]
+    if not isinstance(workflow, Mapping):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow must contain a YAML mapping.",
+                path_name,
+            )
+        ]
+
+    failures: list[str] = []
+    events = _workflow_events(workflow)
+    for event_name in ("pull_request", "pull_request_target"):
+        if event_name not in events:
+            failures.append(f"missing {event_name} event")
+        elif not _event_runs_on_synchronize(workflow, event_name):
+            failures.append(f"{event_name} must run on synchronize")
+    if "pull_request_review" not in events or not _event_runs_on_review_dismissal(workflow):
+        failures.append("pull_request_review must run on dismissed review events")
+
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, Mapping):
+        failures.append("jobs must be a mapping")
+        jobs = {}
+    else:
+        extra_jobs = sorted(
+            str(name) for name in jobs if str(name) not in {"request", "codex-review"}
+        )
+        if extra_jobs:
+            failures.append(
+                "workflow must contain only request and codex-review jobs; extra jobs: "
+                + ", ".join(extra_jobs)
+            )
+    request = jobs.get("request", {})
+    wait = jobs.get("codex-review", {})
+    if not isinstance(request, Mapping):
+        failures.append("request job is missing")
+        request = {}
+    if not isinstance(wait, Mapping):
+        failures.append("codex-review job is missing")
+        wait = {}
+
+    if "needs" in request:
+        failures.append("request job must not declare needs dependencies")
+    if "needs" in wait:
+        failures.append("codex-review job must not declare needs dependencies")
+    if request.get("continue-on-error") not in (None, False):
+        failures.append("request job must not suppress job failures")
+    if wait.get("continue-on-error") not in (None, False):
+        failures.append("codex-review job must not suppress job failures")
+
+    if not _uses_event(request, "pull_request_target"):
+        failures.append("request job condition must canonically bind pull_request_target")
+    if not _uses_review_wait_events(wait):
+        failures.append(
+            "codex-review job condition must canonically bind pull_request and pull_request_review"
+        )
+
+    request_permissions = _job_permissions(request)
+    if request_permissions.get("issues") != "write":
+        failures.append("request job must grant issues: write")
+    if request_permissions.get("pull-requests") != "read":
+        failures.append("request job must grant pull-requests: read")
+    wait_permissions = _job_permissions(wait)
+    if wait_permissions.get("issues") != "read":
+        failures.append("codex-review job must grant issues: read")
+    if wait_permissions.get("pull-requests") != "read":
+        failures.append("codex-review job must grant pull-requests: read")
+    if any(str(permission).lower() == "write" for permission in wait_permissions.values()):
+        failures.append("codex-review job must remain read-only")
+
+    concurrency = workflow.get("concurrency", {})
+    expected_group = "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
+    if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not True:
+        failures.append("concurrency must cancel superseded runs")
+    elif concurrency.get("group") != expected_group:
+        failures.append("concurrency must use the canonical evaluated concurrency group")
+
+    request_ref = _gate_ref(request, "request")
+    wait_ref = _gate_ref(wait, "wait")
+    for label, reference in (("request", request_ref), ("wait", wait_ref)):
+        if reference is None:
+            failures.append(
+                f"{label} job must contain exactly one unconditional canonical gate step "
+                "with token, current PR inputs, and positive timing overrides"
+            )
+        elif reference not in TRUSTED_AI_REVIEW_GATE_REFS:
+            failures.append(f"{label} job uses an untrusted gate revision {reference}")
+    if request_ref is not None and wait_ref is not None and request_ref != wait_ref:
+        failures.append("request and wait jobs must pin the same gate revision")
+
+    if _has_forbidden_write_permissions(workflow):
+        failures.append("workflow must not grant statuses/checks write or write-all permissions")
+
+    if not _codeowners_covers_path(root, relative):
+        failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
+    if not _codeowners_covers_path(root, Path(".github/CODEOWNERS")):
+        failures.append(".github/CODEOWNERS must protect itself with an effective owner rule")
+
+    if failures:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow is missing trusted governance semantics: "
+                + "; ".join(failures),
+                path_name,
+            )
+        ]
+    return []
+
+
+def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
+    """Validate every explicitly declared trusted AI-review workflow."""
+    path_name = "evidence.paths.ai_review_workflow"
+    declarations = _as_paths(value)
+    expected = 1 if isinstance(value, str) else len(value) if isinstance(value, Sequence) else 0
+    if not declarations or len(declarations) != expected:
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review evidence must be a workflow path string or a nonempty list of strings.",
+                path_name,
+            )
+        ]
+
+    findings: list[Finding] = []
+    for declaration in declarations:
+        findings.extend(_single_ai_review_workflow_findings(declaration, root))
+    return findings
+
+
 def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
     """Validate declared repository evidence."""
     findings: list[Finding] = []
@@ -311,6 +723,9 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
                     f"evidence.paths.{key}",
                 )
             )
+
+    if "ai_review_workflow" in paths:
+        findings.extend(_ai_review_workflow_findings(paths["ai_review_workflow"], root))
     return findings
 
 
@@ -339,6 +754,7 @@ def conformance_score(findings: Iterable[Finding]) -> int:
         "evidence.declaration_missing": 7,
         "evidence.path_missing": 7,
         "evidence.paths_invalid": 20,
+        "evidence.ai_review_workflow_invalid": 20,
     }
     return max(0, 100 - sum(deductions.get(item.code, 5) for item in findings))
 

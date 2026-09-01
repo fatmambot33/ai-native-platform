@@ -10,7 +10,7 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from ai_native import load_schema
-from validator.validate_standard import ROOT, validate_standard
+from validator.validate_standard import REQUIRED_FILES, ROOT, validate_standard
 
 IMMUTABLE_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -55,6 +55,18 @@ def test_codeql_uploads_when_public_and_retains_private_fallback() -> None:
     assert "github.event.repository.private" in workflow
     assert "'never' || 'always'" in workflow
     assert "actions/upload-artifact@v4" in workflow
+
+
+def test_reusable_codex_gate_implementation_is_required() -> None:
+    assert "actions/codex-review-gate/action.yml" in REQUIRED_FILES
+    assert "actions/codex-review-gate/codex-review-gate.sh" in REQUIRED_FILES
+
+
+def test_standard_self_validation_uses_effective_codeowners_rules() -> None:
+    source = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+
+    assert "_codeowners_effective_owners" in source
+    assert "token not in codeowners" not in source
 
 
 def test_real_consumer_registry_is_immutable_and_diverse() -> None:

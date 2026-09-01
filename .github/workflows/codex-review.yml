@@ -1,0 +1,49 @@
+name: Codex review governance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [dismissed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  request:
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request Codex review of current HEAD
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@cd1f286222a286508c962288671c1f6c97b52d95
+        with:
+          token: ${{ github.token }}
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          mode: request
+
+  codex-review:
+    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Codex review of current HEAD and resolved threads
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@cd1f286222a286508c962288671c1f6c97b52d95
+        with:
+          token: ${{ github.token }}
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          mode: wait

@@ -8,7 +8,8 @@ The repository provides:
 2. profile-aware conformance rules;
 3. an installable CLI and reusable CI gate;
 4. governed, evidence-driven continuous improvement;
-5. reproducible release metadata, SBOM, provenance, and real-consumer verification.
+5. current-HEAD AI review governance for protected pull requests;
+6. reproducible release metadata, SBOM, provenance, and real-consumer verification.
 
 ## Profiles
 
@@ -75,7 +76,7 @@ v0.1 standard pin; the v0.2 validator itself does not accept the removed key.
 
 ### Reusable public workflow
 
-Public consumers can call the canonical workflow directly with no cross-repository secret:
+Public consumers can call the latest released canonical workflow directly with no cross-repository secret:
 
 ```yaml
 jobs:
@@ -85,7 +86,9 @@ jobs:
       manifest: AI_NATIVE_PLATFORM.yaml
 ```
 
-Pin an exact release or immutable commit SHA. Never use `@main` in a production consumer.
+Pin an exact release or immutable commit SHA. Never use `@main` in a production consumer. Unreleased
+framework capabilities, including current-HEAD AI review governance, should be pinned to an immutable
+commit until they are included in the next release.
 
 ### Immutable vendored contract
 
@@ -95,6 +98,39 @@ repository keeps an immutable registry and continuously revalidates every regist
 
 Private mirrors may pass the reusable workflow's optional `standard_token` when cross-repository read
 access requires authentication. See `docs/DISTRIBUTION.md`.
+
+## AI review governance
+
+The current unreleased framework adds AI review as a pre-merge governance control. A protected pull
+request is eligible to merge only when normal CI and security gates pass, Codex has reviewed the
+current HEAD commit, and all actionable review threads are resolved. A new commit invalidates the
+older review evidence.
+
+The reference `.github/workflows/codex-review.yml` uses two event paths. A base-trusted
+`pull_request_target` job only creates the HEAD-scoped `@codex review` request. The required
+`pull_request` job named `codex-review` is attached naturally to the PR check set, has read-only
+permissions, and waits for current-HEAD evidence while ordinary CI runs in parallel. Both jobs invoke
+the reusable gate from an immutable 40-character framework commit. The required result is not
+published through writable commit-status or check APIs.
+
+The workflow definitions and CODEOWNERS file are themselves narrowly CODEOWNERS-protected. Enable
+**Require review from Code Owners** after bootstrap. Ordinary source, documentation, and test PRs can
+still keep the general required human approval count at zero; only governance/workflow changes require
+code-owner review or an explicitly authorized owner bypass.
+
+Clean-review reactions are accepted only on the trusted HEAD-specific request, and only while that
+request remains unedited (`created_at == updated_at`). This prevents an old Codex 👍 from being reused
+by rewriting a previous request comment for a newer commit.
+
+Declaring `evidence.paths.ai_review_workflow` is opt-in for version-one manifests. If declared,
+`ai-native validate` checks that the evidence is a real `.github/workflows` YAML file with the
+canonical two-event request/wait semantics, immutable action pins, PR-scoped cancellation, and no
+`statuses: write` or `checks: write` trust boundary.
+
+Explicit re-review requires a Codex environment for the repository. The first PR that introduces the
+governance workflow and narrow CODEOWNERS rules is a one-time bootstrap. After that PR receives a
+current-HEAD Codex review and merges, add `codex-review` to the branch ruleset and enable code-owner
+review. See `docs/AI_REVIEW_GOVERNANCE.md` for the full trust model and bootstrap rule.
 
 ## Real consumers
 
@@ -168,15 +204,18 @@ them. Later `main` changes cannot move the tag or replace release assets. See `d
 
 ## Public repository controls
 
-Public operation requires protected `main`, required quality and conformance checks, and published
-CodeQL results. The workflows remain safe to execute while the repository is private: CodeQL retains
-SARIF without uploading it and release provenance remains independently verifiable. Once public,
-CodeQL publication and GitHub-hosted build attestations activate automatically.
+Public operation requires protected `main`, required quality and conformance checks, published CodeQL
+results, current-HEAD AI review where enabled, review-thread resolution, and code-owner protection of
+the governance workflow surfaces. The workflows remain safe to execute while the repository is
+private: CodeQL retains SARIF without uploading it and release provenance remains independently
+verifiable. Once public, CodeQL publication and GitHub-hosted build attestations activate automatically.
 
 ## Repository structure
 
 - `schemas/ai-native-platform.schema.json` — product contract
 - `standard/AI_NATIVE_PLATFORM.yaml` — standard identity and release gates
+- `actions/codex-review-gate/` — reusable current-HEAD Codex merge gate
+- `.github/workflows/codex-review.yml` — split trusted-request/read-only-required AI-review governance
 - `ai_native.py` — validator, migration library, SARIF, and CLI
 - `fixtures/` — passing, failing, and consumer fixtures
 - `consumers/registry.yaml` — immutable real-consumer proof
