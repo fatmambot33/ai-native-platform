@@ -24,6 +24,8 @@ AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
   pull_request:
   pull_request_target:
+  pull_request_review:
+    types: [dismissed]
 permissions:
   contents: read
 concurrency:
@@ -44,7 +46,7 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
           mode: request
   codex-review:
-    if: github.event_name == 'pull_request'
+    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
     permissions:
       contents: read
       issues: read
@@ -90,6 +92,14 @@ def _materialize_evidence(root: Path, data: dict) -> None:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(AI_REVIEW_WORKFLOW, encoding="utf-8")
+    if ai_reviews:
+        codeowners = root / ".github" / "CODEOWNERS"
+        codeowners.parent.mkdir(parents=True, exist_ok=True)
+        codeowners.write_text(
+            "/.github/workflows/** @repository-owner\n"
+            "/.github/CODEOWNERS @repository-owner\n",
+            encoding="utf-8",
+        )
 
 
 def _validate_ai_review_text(tmp_path: Path, workflow_text: str) -> list:
@@ -234,6 +244,7 @@ jobs:
       - run: echo safe
 # pull_request:
 # pull_request_target:
+# pull_request_review:
 # codex-review:
 # mode: request
 # mode: wait
@@ -333,12 +344,10 @@ def test_ai_review_workflow_rejects_ignored_gate_failure(tmp_path: Path) -> None
 
 
 def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
+    canonical = "if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
     findings = _validate_ai_review_text(
         tmp_path,
-        AI_REVIEW_WORKFLOW.replace(
-            "if: github.event_name == 'pull_request'",
-            "if: github.event_name == 'pull_request' && false",
-        ),
+        AI_REVIEW_WORKFLOW.replace(canonical, canonical + " && false"),
     )
 
     assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
@@ -459,7 +468,8 @@ def test_plugin_profile_requires_plugin_evidence(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
-        finding.code == "evidence.path_missing" and finding.path == "evidence.paths.plugin_manifest"
+        finding.code == "evidence.path_missing"
+        and finding.path == "evidence.paths.plugin_manifest"
         for finding in findings
     )
 
