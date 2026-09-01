@@ -327,6 +327,26 @@ def _event_runs_on_synchronize(workflow: Mapping[Any, Any], event_name: str) -> 
     return False
 
 
+def _event_runs_on_review_dismissal(workflow: Mapping[Any, Any]) -> bool:
+    """Return whether pull-request review dismissal re-runs governance."""
+    events = _workflow_events_value(workflow)
+    if not isinstance(events, Mapping) or "pull_request_review" not in events:
+        return False
+    config = events["pull_request_review"]
+    if config is None:
+        return True
+    if not isinstance(config, Mapping):
+        return False
+    types = config.get("types")
+    if types is None:
+        return True
+    if isinstance(types, str):
+        return types == "dismissed"
+    if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+        return "dismissed" in types
+    return False
+
+
 def _job_permissions(job: Mapping[str, Any]) -> Mapping[str, Any]:
     """Return a job permission mapping or an empty mapping."""
     permissions = job.get("permissions", {})
@@ -352,8 +372,30 @@ def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
     return condition in {event_only, draft_guard, reverse_guard}
 
 
+def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
+    """Return whether the wait job runs on PR updates and review dismissal."""
+    condition = _normalize_condition(job.get("if"))
+    event_guard = "(github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+    draft_guard = f"{event_guard} && github.event.pull_request.draft == false"
+    reverse_guard = f"github.event.pull_request.draft == false && {event_guard}"
+    return condition in {event_guard, draft_guard, reverse_guard}
+
+
+def _positive_integer_input(value: Any) -> bool:
+    """Return whether an action input represents a positive integer."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value > 0
+    if isinstance(value, str) and value.isdigit():
+        return int(value) > 0
+    return False
+
+
 def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
     """Return a trusted-shape canonical gate ref for a request or wait job."""
+    if job.get("continue-on-error") not in (None, False):
+        return None
     steps = job.get("steps", [])
     if (
         not isinstance(steps, Sequence)
@@ -378,6 +420,9 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
     }
     if any(inputs.get(key) != value for key, value in required_inputs.items()):
         return None
+    for key in ("timeout-seconds", "poll-seconds"):
+        if key in inputs and not _positive_integer_input(inputs[key]):
+            return None
     return uses[len(prefix) :]
 
 
@@ -406,11 +451,50 @@ def _has_forbidden_write_permissions(value: Any) -> bool:
     return False
 
 
-def _codeowners_covers_path(root: Path, relative: Path) -> bool:
-    """Return whether the effective CODEOWNERS rule assigns the declared workflow."""
+def _codeowners_pattern_regex(pattern: str) -> re.Pattern[str] | None:
+    """Compile the supported CODEOWNERS glob subset with root anchoring."""
+    if not pattern or pattern.startswith("!"):
+        return None
+    anchored = pattern.startswith("/")
+    normalized = pattern[1:] if anchored else pattern
+    if not normalized:
+        return None
+    if normalized.endswith("/"):
+        normalized += "**"
+    has_slash = "/" in normalized
+    pieces: list[str] = []
+    index = 0
+    while index < len(normalized):
+        character = normalized[index]
+        if character == "*":
+            if index + 1 < len(normalized) and normalized[index + 1] == "*":
+                index += 2
+                if index < len(normalized) and normalized[index] == "/":
+                    pieces.append("(?:.*/)?")
+                    index += 1
+                else:
+                    pieces.append(".*")
+                continue
+            pieces.append("[^/]*")
+        elif character == "?":
+            pieces.append("[^/]")
+        else:
+            pieces.append(re.escape(character))
+        index += 1
+    prefix = "^"
+    if not anchored and not has_slash:
+        prefix += "(?:.*/)?"
+    try:
+        return re.compile(prefix + "".join(pieces) + "$")
+    except re.error:
+        return None
+
+
+def _codeowners_effective_owners(root: Path, relative: Path) -> list[str] | None:
+    """Return owners from the effective last matching active CODEOWNERS rule."""
     codeowners = root / ".github" / "CODEOWNERS"
     if not codeowners.is_file():
-        return False
+        return None
 
     relative_name = relative.as_posix().lstrip("/")
     effective_owners: list[str] | None = None
@@ -422,16 +506,15 @@ def _codeowners_covers_path(root: Path, relative: Path) -> bool:
         if not parts:
             continue
         pattern, owners = parts[0], parts[1:]
-        normalized = pattern.lstrip("/")
-        if normalized.endswith("/"):
-            normalized += "**"
-        try:
-            matches = Path(relative_name).match(normalized)
-        except ValueError:
-            continue
-        if matches:
+        matcher = _codeowners_pattern_regex(pattern)
+        if matcher is not None and matcher.fullmatch(relative_name):
             effective_owners = owners
+    return effective_owners
 
+
+def _codeowners_covers_path(root: Path, relative: Path) -> bool:
+    """Return whether the effective CODEOWNERS rule assigns valid owners."""
+    effective_owners = _codeowners_effective_owners(root, relative)
     return bool(effective_owners) and all(
         owner.startswith("@") for owner in effective_owners
     )
@@ -492,13 +575,17 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"missing {event_name} event")
         elif not _event_runs_on_synchronize(workflow, event_name):
             failures.append(f"{event_name} must run on synchronize")
+    if "pull_request_review" not in events or not _event_runs_on_review_dismissal(workflow):
+        failures.append("pull_request_review must run on dismissed review events")
 
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, Mapping):
         failures.append("jobs must be a mapping")
         jobs = {}
     else:
-        extra_jobs = sorted(str(name) for name in jobs if str(name) not in {"request", "codex-review"})
+        extra_jobs = sorted(
+            str(name) for name in jobs if str(name) not in {"request", "codex-review"}
+        )
         if extra_jobs:
             failures.append(
                 "workflow must contain only request and codex-review jobs; extra jobs: "
@@ -517,11 +604,17 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         failures.append("request job must not declare needs dependencies")
     if "needs" in wait:
         failures.append("codex-review job must not declare needs dependencies")
+    if request.get("continue-on-error") not in (None, False):
+        failures.append("request job must not suppress job failures")
+    if wait.get("continue-on-error") not in (None, False):
+        failures.append("codex-review job must not suppress job failures")
 
     if not _uses_event(request, "pull_request_target"):
         failures.append("request job condition must canonically bind pull_request_target")
-    if not _uses_event(wait, "pull_request"):
-        failures.append("codex-review job condition must canonically bind pull_request")
+    if not _uses_review_wait_events(wait):
+        failures.append(
+            "codex-review job condition must canonically bind pull_request and pull_request_review"
+        )
 
     request_permissions = _job_permissions(request)
     if request_permissions.get("issues") != "write":
@@ -537,14 +630,11 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         failures.append("codex-review job must remain read-only")
 
     concurrency = workflow.get("concurrency", {})
+    expected_group = "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
     if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not True:
         failures.append("concurrency must cancel superseded runs")
-    else:
-        group = str(concurrency.get("group", ""))
-        if "github.event.pull_request.number" not in group:
-            failures.append("concurrency must be scoped to the pull request")
-        if "github.event_name" not in group:
-            failures.append("concurrency must separate request and wait event runs")
+    elif concurrency.get("group") != expected_group:
+        failures.append("concurrency must use the canonical evaluated concurrency group")
 
     request_ref = _gate_ref(request, "request")
     wait_ref = _gate_ref(wait, "wait")
@@ -552,7 +642,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         if reference is None:
             failures.append(
                 f"{label} job must contain exactly one unconditional canonical gate step "
-                "with token and current PR inputs"
+                "with token, current PR inputs, and positive timing overrides"
             )
         elif reference not in TRUSTED_AI_REVIEW_GATE_REFS:
             failures.append(f"{label} job uses an untrusted gate revision {reference}")
@@ -564,6 +654,8 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     if not _codeowners_covers_path(root, relative):
         failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
+    if not _codeowners_covers_path(root, Path(".github/CODEOWNERS")):
+        failures.append(".github/CODEOWNERS must protect itself with an effective owner rule")
 
     if failures:
         return [
