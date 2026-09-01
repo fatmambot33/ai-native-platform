@@ -22,6 +22,7 @@ from ai_native import (  # noqa: E402, I001
     STANDARD_REPOSITORY,
     TRUSTED_AI_REVIEW_GATE_REFS,
     Finding,
+    _codeowners_effective_owners,
     _single_ai_review_workflow_findings,
     contract_findings,
     load_mapping,
@@ -394,25 +395,27 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             )
         )
 
-    codeowners = (root / ".github/CODEOWNERS").read_text(encoding="utf-8")
-    for token in (
-        "/.github/workflows/** @fatmambot33",
-        "/.github/CODEOWNERS @fatmambot33",
-        "/actions/codex-review-gate/** @fatmambot33",
-        "/schemas/** @fatmambot33",
-        "/standard/** @fatmambot33",
-        "/ai_native.py @fatmambot33",
-        "/validator/** @fatmambot33",
-        "/templates/** @fatmambot33",
-        "/docs/GOVERNANCE.md @fatmambot33",
-        "/pyproject.toml @fatmambot33",
-        "/tools/release_artifacts.py @fatmambot33",
-    ):
-        if token not in codeowners:
+    governed_paths = (
+        ".github/workflows/codex-review.yml",
+        ".github/CODEOWNERS",
+        "actions/codex-review-gate/action.yml",
+        "schemas/ai-native-platform.schema.json",
+        "standard/AI_NATIVE_PLATFORM.yaml",
+        "ai_native.py",
+        "validator/validate_standard.py",
+        "templates/AI_NATIVE_PLATFORM.yaml",
+        "docs/GOVERNANCE.md",
+        "pyproject.toml",
+        "tools/release_artifacts.py",
+    )
+    for relative in governed_paths:
+        owners = _codeowners_effective_owners(root, Path(relative))
+        if not owners or "@fatmambot33" not in owners:
             findings.append(
                 Finding(
                     "standard.ai_review_codeowners_incomplete",
-                    f"Governance CODEOWNERS must include {token!r}.",
+                    f"Governance CODEOWNERS must actively protect {relative!r} "
+                    "with @fatmambot33.",
                     ".github/CODEOWNERS",
                 )
             )
