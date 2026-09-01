@@ -5,6 +5,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [dismissed]
 
 permissions:
   contents: read
@@ -31,7 +33,7 @@ jobs:
           mode: request
 
   codex-review:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && github.event.pull_request.draft == false
     permissions:
       contents: read
       issues: read
