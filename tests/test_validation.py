@@ -344,7 +344,10 @@ def test_ai_review_workflow_rejects_ignored_gate_failure(tmp_path: Path) -> None
 
 
 def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
-    canonical = "if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+    canonical = (
+        "if: (github.event_name == 'pull_request' || "
+        "github.event_name == 'pull_request_review')"
+    )
     findings = _validate_ai_review_text(
         tmp_path,
         AI_REVIEW_WORKFLOW.replace(canonical, canonical + " && false"),
