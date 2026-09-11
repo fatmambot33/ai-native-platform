@@ -71,7 +71,7 @@ def test_sarif_output_is_valid_shape() -> None:
 
 
 def test_upgrade_unversioned_manifest() -> None:
-    """Legacy manifests upgrade deterministically to version one."""
+    """Legacy manifests upgrade deterministically to the current manifest version."""
     legacy = {
         "product": {
             "name": "legacy",
@@ -81,11 +81,12 @@ def test_upgrade_unversioned_manifest() -> None:
         "interfaces": {"cli": True},
     }
     upgraded = migrate_manifest(legacy)
-    assert upgraded["version"] == CURRENT_MANIFEST_VERSION
-    assert upgraded["standard"]["ref"] == "v0.2.0"
+    assert upgraded["version"] == CURRENT_MANIFEST_VERSION == 2
+    assert upgraded["standard"]["ref"] == "v0.3.0"
     assert upgraded["product"]["name"] == "legacy"
     assert upgraded["interfaces"]["cli"] is True
     assert upgraded["interfaces"]["json_schema"] is True
+    assert upgraded["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
 
 
 def test_upgrade_existing_v0_1_manifest_renames_security_evidence() -> None:
@@ -105,9 +106,11 @@ def test_upgrade_existing_v0_1_manifest_renames_security_evidence() -> None:
     upgraded = migrate_manifest(legacy)
     paths = upgraded["evidence"]["paths"]
 
-    assert upgraded["standard"]["ref"] == "v0.2.0"
+    assert upgraded["standard"]["ref"] == "v0.3.0"
     assert paths["security_evidence"] == ".github/workflows/security.yml"
     assert "security_workflow" not in paths
+    assert paths["welcome_skill"] == "skills/welcome/SKILL.md"
+    assert paths["troubleshooting_skill"] == "skills/troubleshooting/SKILL.md"
 
 
 def test_upgrade_rejects_future_manifest() -> None:
@@ -136,7 +139,9 @@ def test_upgrade_cli_dry_run(tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 0
-    assert "+version: 1" in result.stdout
+    assert "+version: 2" in result.stdout
+    assert "+    welcome: true" in result.stdout
+    assert "+    troubleshooting: true" in result.stdout
     assert not manifest.read_text(encoding="utf-8").startswith("version:")
 
 
@@ -225,7 +230,7 @@ def test_release_metadata(tmp_path: Path) -> None:
     )
     dist = tmp_path / "dist"
     dist.mkdir()
-    artifact = dist / "ai_native_platform-0.2.0-py3-none-any.whl"
+    artifact = dist / "ai_native_platform-0.3.0-py3-none-any.whl"
     artifact.write_bytes(b"wheel")
     outputs = build_metadata(tmp_path, dist)
     assert outputs["checksums"].is_file()
@@ -234,4 +239,4 @@ def test_release_metadata(tmp_path: Path) -> None:
     assert sbom["spdxVersion"] == "SPDX-2.3"
     assert provenance["predicateType"] == "https://slsa.dev/provenance/v1"
     build_type = provenance["predicate"]["buildDefinition"]["buildType"]
-    assert build_type.endswith("/blob/v0.2.0/.github/workflows/release.yml")
+    assert build_type.endswith("/blob/v0.3.0/.github/workflows/release.yml")
