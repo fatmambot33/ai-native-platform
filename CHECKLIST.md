@@ -45,6 +45,9 @@ A repository is compliant only when declarations are backed by repository eviden
 - [ ] Safety classifications
 - [ ] Tool versioning
 - [ ] Agent playbooks
+- [ ] Welcome skill provides a deterministic first-use/readiness path — **conditional for plugin or MCP agent surfaces**
+- [ ] Troubleshooting skill routes structured failures to safe recovery actions — **conditional for plugin or MCP agent surfaces**
+- [ ] Welcome and troubleshooting behavior is repository-backed and implementation-neutral
 
 ## SDKs
 
@@ -170,6 +173,7 @@ A repository is compliant only when declarations are backed by repository eviden
 - [ ] Performance tests
 - [ ] Fuzz tests
 - [ ] Plugin lifecycle and discovery tests
+- [ ] Welcome and troubleshooting skill contract tests — **conditional for agent surfaces**
 - [ ] Packaging and clean-install smoke tests
 
 ## Automation
@@ -244,6 +248,7 @@ A repository is compliant only when declarations are backed by repository eviden
 - [ ] Safe-by-default design
 - [ ] Minimal configuration
 - [ ] First-class agent experience
+- [ ] Deterministic onboarding and recovery
 
 ## Definition of Done
 
@@ -252,5 +257,5 @@ A platform is truly **AI-native** when:
 - Every capability is defined once in a typed, versioned contract.
 - Humans, SDKs, CLIs, MCP servers, plugins, and AI agents consume that same contract.
 - Documentation, schemas, tool definitions, examples, and tests are generated from or validated against a single source of truth.
-- AI agents can reliably discover, understand, execute, and recover from every capability without custom prompt engineering.
+- AI agents can reliably discover, understand, onboard, execute, troubleshoot, and recover from every capability without custom prompt engineering.
 - The platform is observable, secure, testable, backward compatible, self-improving, and production-ready.
