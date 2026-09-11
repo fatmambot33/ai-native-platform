@@ -7,8 +7,9 @@ The repository provides:
 1. a versioned product-manifest contract;
 2. profile-aware conformance rules;
 3. an installable CLI and reusable CI gate;
-4. governed, evidence-driven continuous improvement;
-5. reproducible release metadata, SBOM, provenance, and real-consumer verification.
+4. first-class agent onboarding and deterministic recovery contracts;
+5. governed, evidence-driven continuous improvement;
+6. reproducible release metadata, SBOM, provenance, and real-consumer verification.
 
 ## Profiles
 
@@ -24,6 +25,18 @@ The repository provides:
 MCP is opt-in. Consumers without an MCP surface may omit `interfaces.mcp`; declaring `mcp: true`
 requires repository evidence for that surface. Every profile has a passing and focused failing manifest
 fixture under `fixtures/`.
+
+## Agent skills
+
+Manifest v2 makes two agent-facing capabilities part of the AI-native contract:
+
+- `agent.skills.welcome: true` — a deterministic first-use/readiness path that gets a user from installation to a verified usable state without exposing secrets;
+- `agent.skills.troubleshooting: true` — a deterministic diagnostic/recovery path that routes structured failures to safe, actionable remediation.
+
+The contract is implementation-neutral. Products exposing a plugin or MCP agent surface must provide
+`evidence.paths.welcome_skill` and `evidence.paths.troubleshooting_skill`, but those paths may point to
+packaged skill files, commands, playbooks, or equivalent deterministic repository-backed behavior.
+Manifest-v1 consumers remain valid until they opt into v2.
 
 ## Install
 
@@ -59,7 +72,7 @@ ai-native validate AI_NATIVE_PLATFORM.yaml --format json
 ai-native validate AI_NATIVE_PLATFORM.yaml --format sarif --output results.sarif
 ```
 
-Upgrade a legacy or unversioned manifest:
+Upgrade a legacy manifest:
 
 ```bash
 ai-native upgrade AI_NATIVE_PLATFORM.yaml --dry-run
@@ -67,9 +80,11 @@ ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff
 ai-native upgrade AI_NATIVE_PLATFORM.yaml
 ```
 
-The migration command never silently downgrades a future manifest version. For the v0.2 contract it
-also rewrites the removed `security_workflow` evidence key to `security_evidence` and updates an old
-v0.1 standard pin; the v0.2 validator itself does not accept the removed key.
+The migration command never silently downgrades a future manifest version. For v0.3 it migrates
+manifest v1 to v2, adds the welcome/troubleshooting skill declarations and conventional evidence
+paths, updates v0.1/v0.2 release pins, and still rewrites the removed `security_workflow` evidence key
+to `security_evidence`. Agent-surface repositories must create or replace the migrated skill evidence
+paths before validation.
 
 ## Distribution
 
@@ -80,7 +95,7 @@ Public consumers can call the canonical workflow directly with no cross-reposito
 ```yaml
 jobs:
   conformance:
-    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.2.0
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.3.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
 ```
@@ -105,7 +120,8 @@ access requires authentication. See `docs/DISTRIBUTION.md`.
 - `fatmambot33/openai-sdk-helpers` — agent tool.
 
 Every registered commit passes the canonical contract without repository-specific exceptions, its
-native repository CI, and CodeQL analysis.
+native repository CI, and CodeQL analysis. Their pinned manifest-v1 contracts remain valid while v2
+is adopted explicitly.
 
 ## Evidence-driven self-improvement
 
