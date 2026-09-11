@@ -11,6 +11,7 @@ from ai_native import (
     command_init,
     contract_findings,
     load_mapping,
+    migrate_manifest,
     required_evidence_keys,
     template_path,
     validate_manifest,
@@ -39,6 +40,8 @@ def _materialize_evidence(root: Path, data: dict) -> None:
 def test_starter_template_contract_is_valid() -> None:
     data = _template()
 
+    assert data["version"] == 2
+    assert data["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
     assert "mcp" not in data["interfaces"]
     assert contract_findings(data) == []
 
@@ -52,6 +55,95 @@ def test_complete_repository_evidence_passes(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert findings == []
+
+
+def test_manifest_v1_remains_valid_without_agent_skills() -> None:
+    data = _template()
+    data["version"] = 1
+    data["standard"]["ref"] = "v0.2.0"
+    data["agent"].pop("skills")
+    data["evidence"]["paths"].pop("welcome_skill")
+    data["evidence"]["paths"].pop("troubleshooting_skill")
+
+    assert contract_findings(data) == []
+
+
+def test_manifest_v2_requires_welcome_and_troubleshooting_skills() -> None:
+    data = _template()
+    data["agent"]["skills"].pop("welcome")
+
+    findings = contract_findings(data)
+
+    assert any(
+        finding.code == "schema.invalid" and finding.path == "agent.skills"
+        for finding in findings
+    )
+
+
+def test_agent_surface_requires_skill_evidence_in_v2() -> None:
+    data = _template()
+    data["product"]["profile"] = "agent-tool"
+    data["plugin"]["enabled"] = True
+    data["interfaces"]["plugin"] = True
+
+    keys = required_evidence_keys(data)
+
+    assert "welcome_skill" in keys
+    assert "troubleshooting_skill" in keys
+
+
+def test_non_agent_surface_does_not_require_skill_evidence() -> None:
+    data = _template()
+
+    keys = required_evidence_keys(data)
+
+    assert "welcome_skill" not in keys
+    assert "troubleshooting_skill" not in keys
+
+
+def test_missing_welcome_skill_evidence_fails(tmp_path: Path) -> None:
+    data = _template()
+    data["product"]["profile"] = "agent-tool"
+    data["plugin"]["enabled"] = True
+    data["interfaces"]["plugin"] = True
+    data["evidence"]["paths"].update(
+        {
+            "plugin_manifest": ".codex-plugin/plugin.json",
+            "plugin_tests": "tests/test_plugin.py",
+        }
+    )
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+    (tmp_path / "skills/welcome/SKILL.md").unlink()
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.path_missing"
+        and finding.path == "evidence.paths.welcome_skill"
+        for finding in findings
+    )
+
+
+def test_upgrade_migrates_v1_to_v2_agent_skills() -> None:
+    data = _template()
+    data["version"] = 1
+    data["standard"]["ref"] = "v0.2.0"
+    data["agent"].pop("skills")
+    data["evidence"]["paths"].pop("welcome_skill")
+    data["evidence"]["paths"].pop("troubleshooting_skill")
+
+    migrated = migrate_manifest(data)
+
+    assert migrated["version"] == 2
+    assert migrated["standard"]["ref"] == "v0.3.0"
+    assert migrated["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
+    assert migrated["evidence"]["paths"]["welcome_skill"] == "skills/welcome/SKILL.md"
+    assert (
+        migrated["evidence"]["paths"]["troubleshooting_skill"]
+        == "skills/troubleshooting/SKILL.md"
+    )
 
 
 def test_mcp_declaration_is_optional() -> None:
@@ -68,6 +160,8 @@ def test_mcp_evidence_is_required_only_when_enabled() -> None:
 
     data["interfaces"]["mcp"] = True
     assert "mcp" in required_evidence_keys(data)
+    assert "welcome_skill" in required_evidence_keys(data)
+    assert "troubleshooting_skill" in required_evidence_keys(data)
 
 
 def test_agent_tool_accepts_plugin_without_mcp_declaration() -> None:
@@ -183,5 +277,6 @@ def test_init_copies_canonical_template(tmp_path: Path) -> None:
 
     assert command_init(Args()) == 0
     generated = load_mapping(Path(Args.destination))
-    assert generated["version"] == 1
+    assert generated["version"] == 2
+    assert generated["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
     assert "mcp" not in generated["interfaces"]
