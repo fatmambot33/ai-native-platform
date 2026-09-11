@@ -4,13 +4,14 @@ standard:
   repository: fatmambot33/ai-native-platform
   lifecycle: prerelease
   versioning: semver
-  current_release: 0.2.0
+  current_release: 0.3.0
 
 product_model:
   contract: schemas/ai-native-platform.schema.json
   evidence_mode: repository
   unknown_fields: forbidden
   extensions_field: extensions
+  current_manifest_version: 2
 
 profiles:
   library:
@@ -33,6 +34,8 @@ principles:
   - evidence_backed
   - deterministic_interfaces
   - structured_outputs
+  - guided_onboarding
+  - deterministic_recovery
   - local_credentials
   - least_privilege
   - governed_autonomy
@@ -45,6 +48,10 @@ required_agent_guarantees:
   - issue_driven_improvement
   - ci_validated_changes
   - governed_autonomy
+
+required_agent_skills:
+  - welcome
+  - troubleshooting
 
 governance:
   human_approval_required:
