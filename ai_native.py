@@ -500,6 +500,11 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
             f"version {CURRENT_MANIFEST_VERSION}"
         )
 
+    source_evidence = data.get("evidence", {})
+    source_paths = (
+        source_evidence.get("paths", {}) if isinstance(source_evidence, Mapping) else {}
+    )
+
     defaults = load_mapping(template_path())
     if source_version < CURRENT_MANIFEST_VERSION:
         migrated = _deep_merge(defaults, data)
@@ -510,10 +515,10 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
     migrated_security_key = False
     evidence = migrated.get("evidence", {})
     paths = evidence.get("paths", {}) if isinstance(evidence, Mapping) else {}
-    if isinstance(paths, dict) and "security_workflow" in paths:
-        if "security_evidence" not in paths:
-            paths["security_evidence"] = paths["security_workflow"]
-        del paths["security_workflow"]
+    if isinstance(paths, dict) and isinstance(source_paths, Mapping) and "security_workflow" in source_paths:
+        if "security_evidence" not in source_paths:
+            paths["security_evidence"] = source_paths["security_workflow"]
+        paths.pop("security_workflow", None)
         migrated_security_key = True
 
     standard = migrated.setdefault("standard", {})
