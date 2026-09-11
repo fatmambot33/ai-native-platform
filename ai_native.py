@@ -20,11 +20,11 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 STANDARD_REPOSITORY = "fatmambot33/ai-native-platform"
 SCHEMA_NAME = "ai-native-platform.schema.json"
 TEMPLATE_NAME = "AI_NATIVE_PLATFORM.yaml"
-CURRENT_MANIFEST_VERSION = 1
+CURRENT_MANIFEST_VERSION = 2
 REF_PATTERN = re.compile(r"(?:[0-9a-f]{40}|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)")
 REQUIRED_AGENT_GUARANTEES = {
     "deterministic_tool_discovery",
@@ -33,6 +33,7 @@ REQUIRED_AGENT_GUARANTEES = {
     "ci_validated_changes",
     "governed_autonomy",
 }
+REQUIRED_AGENT_SKILLS = {"welcome", "troubleshooting"}
 PROFILE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "library": ("interfaces.sdk", "interfaces.json_schema"),
     "cli": ("interfaces.cli", "interfaces.json_schema"),
@@ -218,6 +219,14 @@ def contract_findings(data: Mapping[str, Any]) -> list[Finding]:
     return _deduplicate(findings)
 
 
+def _agent_surface_enabled(data: Mapping[str, Any]) -> bool:
+    """Return whether the manifest exposes a first-class agent surface."""
+    interfaces = data.get("interfaces", {})
+    return isinstance(interfaces, Mapping) and (
+        interfaces.get("plugin") is True or interfaces.get("mcp") is True
+    )
+
+
 def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
     """Return evidence keys required by declared capabilities."""
     keys = set(BASE_EVIDENCE)
@@ -239,6 +248,9 @@ def required_evidence_keys(data: Mapping[str, Any]) -> set[str]:
                 keys.add(evidence_key)
         if interfaces.get("plugin") is True:
             keys.update({"plugin_manifest", "plugin_tests"})
+
+    if data.get("version") == 2 and _agent_surface_enabled(data):
+        keys.update({"welcome_skill", "troubleshooting_skill"})
 
     if isinstance(quality, Mapping):
         if quality.get("docs") is True:
@@ -374,7 +386,7 @@ def sarif_payload(manifest: Path, findings: Sequence[Finding]) -> dict[str, Any]
                 "shortDescription": {"text": finding.message},
                 "helpUri": (
                     "https://github.com/fatmambot33/ai-native-platform"
-                    "/blob/v0.2.0/README.md"
+                    "/blob/v0.3.0/README.md"
                 ),
                 "defaultConfiguration": {"level": finding.level},
             },
@@ -511,7 +523,7 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
         if (
             source_version < CURRENT_MANIFEST_VERSION
             or migrated_security_key
-            or reference == "v0.1.0"
+            or reference in {"v0.1.0", "v0.2.0"}
         ):
             standard["ref"] = f"v{__version__}"
         else:
