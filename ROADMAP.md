@@ -1,5 +1,19 @@
 # Roadmap
 
+## Automated execution view
+
+`ROADMAP.md` remains the human-owned strategic plan. The live execution order is maintained by
+`.github/workflows/roadmap.yml` from open GitHub issues labeled `enhancement`.
+
+- Humans may set `roadmap:priority:p0`, `roadmap:priority:p1`, or `roadmap:priority:p2`.
+- Within the same human priority, higher severity and then older issues run first.
+- Work in progress is capped at three `roadmap:now` items and five `roadmap:next` items.
+- Remaining candidates are labeled `roadmap:later`.
+- The workflow maintains one `[Roadmap] Product roadmap` dashboard issue and never writes to `main`,
+  contracts, releases, or publication settings.
+
+The policy is versioned in `.ai-native/roadmap.yaml`; GitHub Issues remain the agent work queue.
+
 ## Phase 0 — Truthful foundation
 
 Status: **complete**
@@ -63,6 +77,7 @@ Status: **complete for deterministic and optional read-only AI discovery plus is
 - [x] Add optional, off-by-default LLM analysis over bounded repository evidence.
 - [x] Require strict structured model output, grounded repository paths, and confidence filtering.
 - [x] Keep model access read-only and fail back to deterministic discovery without credentials.
+- [x] Maintain a deterministic, capacity-limited Now/Next/Later execution roadmap from issues.
 - [x] Keep branch and PR preparation disabled.
 
 ## Real consumer proof

@@ -7,6 +7,7 @@ All notable changes are documented here.
 ### Added
 
 - Add an optional, off-by-default LLM self-improvement analysis layer with bounded repository evidence, strict structured output, deterministic grounding and confidence checks, a shared issue budget, and fail-soft behavior when credentials or the model are unavailable.
+- Add a deterministic, capacity-limited product-roadmap workflow that maintains Now/Next/Later labels and a live dashboard issue from GitHub issues, with human P0/P1/P2 overrides.
 
 ### Changed
 

@@ -1,0 +1,18 @@
+version: 1
+candidate_labels:
+  - enhancement
+priority_labels:
+  roadmap:priority:p0: 0
+  roadmap:priority:p1: 1
+  roadmap:priority:p2: 2
+capacity:
+  now: 3
+  next: 5
+managed_labels:
+  now: roadmap:now
+  next: roadmap:next
+  later: roadmap:later
+dashboard:
+  title: "[Roadmap] Product roadmap"
+  label: roadmap
+  marker: "<!-- ai-native-roadmap-dashboard -->"

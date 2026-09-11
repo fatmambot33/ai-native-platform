@@ -1,0 +1,149 @@
+name: Product roadmap
+
+on:
+  schedule:
+    - cron: '47 6 * * 1'
+  issues:
+    types: [opened, edited, reopened, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: product-roadmap-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install --disable-pip-version-check -e .
+      - name: Collect open issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            fs.writeFileSync('roadmap-issues.json', JSON.stringify(issues));
+      - name: Build deterministic roadmap
+        run: |
+          python tools/roadmap_engine.py \
+            --input roadmap-issues.json \
+            --config .ai-native/roadmap.yaml \
+            --output roadmap-plan.json
+      - name: Sync roadmap labels and dashboard
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = JSON.parse(fs.readFileSync('roadmap-plan.json', 'utf8'));
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const managed = new Set(Object.values(plan.managed_labels));
+            const priorityColors = ['b60205', 'd93f0b', 'fbca04'];
+            const prioritySpecs = Object.entries(plan.priority_labels).map(([name, rank]) => ({
+              name,
+              color: priorityColors[Number(rank)] || '5319e7',
+              description: `Human roadmap priority: P${rank}`
+            }));
+            const labelSpecs = [
+              { name: plan.dashboard.label, color: '5319e7', description: 'Automated product roadmap' },
+              { name: plan.managed_labels.now, color: 'd73a4a', description: 'Roadmap horizon: now' },
+              { name: plan.managed_labels.next, color: 'fbca04', description: 'Roadmap horizon: next' },
+              { name: plan.managed_labels.later, color: '0e8a16', description: 'Roadmap horizon: later' },
+              ...prioritySpecs
+            ];
+
+            for (const spec of labelSpecs) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: spec.name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ owner, repo, ...spec });
+              }
+            }
+
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            for (const issue of openIssues) {
+              if (issue.pull_request) continue;
+              const current = issue.labels.map(label => typeof label === 'string' ? label : label.name);
+              const target = plan.items.find(item => item.number === issue.number);
+              if (!target && !current.some(label => managed.has(label))) continue;
+              const next = current.filter(label => !managed.has(label));
+              if (target) next.push(target.label);
+              const before = [...current].sort().join('\0');
+              const after = [...new Set(next)].sort().join('\0');
+              if (before !== after) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  labels: [...new Set(next)]
+                });
+              }
+            }
+
+            const allIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'all',
+              per_page: 100
+            });
+            const marker = plan.dashboard.marker;
+            const dashboard = allIssues.find(issue =>
+              !issue.pull_request && (issue.body || '').includes(marker)
+            );
+
+            if (!dashboard) {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title: plan.dashboard.title,
+                body: plan.body,
+                labels: [plan.dashboard.label]
+              });
+            } else {
+              const currentLabels = dashboard.labels.map(label =>
+                typeof label === 'string' ? label : label.name
+              );
+              const dashboardLabels = [
+                ...currentLabels.filter(label => !managed.has(label)),
+                plan.dashboard.label
+              ];
+              const labelsChanged = [...new Set(currentLabels)].sort().join('\0') !==
+                [...new Set(dashboardLabels)].sort().join('\0');
+              if (
+                dashboard.title !== plan.dashboard.title ||
+                dashboard.body !== plan.body ||
+                dashboard.state !== 'open' ||
+                labelsChanged
+              ) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: dashboard.number,
+                  title: plan.dashboard.title,
+                  body: plan.body,
+                  state: 'open',
+                  labels: [...new Set(dashboardLabels)]
+                });
+              }
+            }
