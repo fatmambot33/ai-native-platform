@@ -1,7 +1,7 @@
-version: 1
+version: 2
 standard:
   repository: fatmambot33/ai-native-platform
-  ref: v0.2.0
+  ref: v0.3.0
 product:
   name: example-product
   profile: library
@@ -46,6 +46,9 @@ agent:
     - issue_driven_improvement
     - ci_validated_changes
     - governed_autonomy
+  skills:
+    welcome: true
+    troubleshooting: true
 self_improvement:
   enabled: true
   github:
@@ -77,5 +80,8 @@ evidence:
     examples: examples
     # May point to a security workflow or a document proving native ruleset/default-setup enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md
+    # Required for manifest v2 when a plugin or MCP agent surface is enabled.
+    welcome_skill: skills/welcome/SKILL.md
+    troubleshooting_skill: skills/troubleshooting/SKILL.md
     self_improvement_workflow: .github/workflows/self-improve.yml
     improvement_issue_template: .github/ISSUE_TEMPLATE/ai-improvement.yml

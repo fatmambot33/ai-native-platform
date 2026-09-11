@@ -1,16 +1,16 @@
-# AI Native Platform v0.2.0
+# AI Native Platform v0.3.0
 
-A focused prerelease that makes security evidence implementation-neutral and keeps MCP opt-in.
+A prerelease that makes deterministic onboarding and recovery first-class AI-native contract capabilities while preserving manifest-v1 compatibility.
 
 Highlights:
 
-- `evidence.paths.security_evidence` is now the canonical evidence key when `quality.security_scan: true`;
-- the v0.1 `security_workflow` key is intentionally removed with no compatibility alias;
-- native GitHub CodeQL, default setup, and repository-ruleset enforcement can be proven by a repository-local evidence document without a duplicate custom workflow;
-- workflow-backed security scanning remains fully supported by pointing `security_evidence` at the workflow;
-- `interfaces.mcp` is optional; consumers without MCP do not need to declare `mcp: false`;
-- `mcp: true` still requires MCP evidence, and `agent-tool` still requires either plugin or MCP;
-- starter manifest, schema, fixtures, validator tests, documentation, and registered consumers migrate together;
-- regression coverage verifies workflow security evidence, native-ruleset evidence, legacy-key rejection, and optional MCP declarations.
+- manifest v2 adds `agent.skills.welcome: true` and `agent.skills.troubleshooting: true`;
+- products exposing `interfaces.plugin: true` or `interfaces.mcp: true` must provide repository evidence for both skills;
+- evidence is implementation-neutral: packaged skill files, commands, playbooks, or equivalent deterministic repository-backed behavior are valid;
+- the canonical starter paths are `skills/welcome/SKILL.md` and `skills/troubleshooting/SKILL.md`;
+- existing manifest-v1 consumers continue to validate without the new fields;
+- `ai-native upgrade` deterministically migrates v1 manifests to v2 and updates the standard ref to v0.3.0;
+- the checklist now treats guided onboarding and deterministic recovery as first-class agent-readiness requirements;
+- the product-roadmap and optional read-only LLM improvement features introduced since v0.2 are included in the same prerelease train.
 
-Migration: rename `security_workflow` to `security_evidence`; omit `interfaces.mcp` when unused; preserve or replace the security evidence path as appropriate; and pin the v0.2 contract.
+Migration: run `ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff`, implement or point `welcome_skill` and `troubleshooting_skill` evidence at real repository behavior for plugin/MCP products, validate locally, and then pin the immutable v0.3 contract.

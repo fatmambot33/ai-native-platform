@@ -4,19 +4,34 @@ All notable changes are documented here.
 
 ## Unreleased
 
+## [0.3.0] - 2026-09-11
+
 ### Added
 
+- Add manifest v2 with first-class `agent.skills.welcome` and `agent.skills.troubleshooting` capabilities.
+- Require repository evidence for welcome and troubleshooting behavior when a v2 product exposes a plugin or MCP agent surface.
 - Add an optional, off-by-default LLM self-improvement analysis layer with bounded repository evidence, strict structured output, deterministic grounding and confidence checks, a shared issue budget, and fail-soft behavior when credentials or the model are unavailable.
 - Add a deterministic, capacity-limited product-roadmap workflow that maintains Now/Next/Later labels and a live dashboard issue from GitHub issues, with human P0/P1/P2 overrides.
 
 ### Changed
 
+- Bump the canonical starter manifest to version 2 while continuing to validate pinned manifest-v1 consumers.
+- Define guided onboarding and deterministic recovery as AI-native principles without requiring a Codex-specific file layout.
 - License the standard and validator under Apache-2.0 and align package metadata.
 - Make the unauthenticated, immutable public reusable workflow the primary documented distribution path.
 - Keep authenticated workflow access as an optional private-mirror path rather than the default.
 
+### Migration
+
+- Run `ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff` to migrate manifest v1 to v2.
+- Add or retain repository-backed welcome and troubleshooting behavior under `agent.skills`.
+- For products with `interfaces.plugin: true` or `interfaces.mcp: true`, point `evidence.paths.welcome_skill` and `evidence.paths.troubleshooting_skill` at real repository evidence. Packaged skill files are recommended but not required; commands, playbooks, or equivalent deterministic implementations are valid.
+- The starter migration uses `skills/welcome/SKILL.md` and `skills/troubleshooting/SKILL.md` as conventional evidence paths; create them or replace those paths before validation.
+- Existing manifest-v1 consumers pinned to earlier immutable contract refs remain valid until they opt into v2.
+
 ### Security
 
+- Welcome and troubleshooting capabilities must preserve local-only secret handling and safe recovery behavior through repository-backed evidence.
 - Publish CodeQL results automatically when the repository is public while retaining SARIF artifacts in all visibility modes.
 - Document GitHub private vulnerability reporting and a non-public fallback contact path.
 
