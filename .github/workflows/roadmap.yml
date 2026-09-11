@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '47 6 * * 1'
   issues:
-    types: [opened, edited, reopened, closed]
+    types: [opened, edited, reopened, closed, labeled, unlabeled]
   workflow_dispatch:
 
 permissions:
