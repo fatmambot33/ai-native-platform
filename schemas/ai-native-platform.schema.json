@@ -47,7 +47,10 @@
   },
   "properties": {
     "version": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "standard": {
       "type": "object",
@@ -327,6 +330,22 @@
             "$ref": "#/$defs/agentGuarantee"
           },
           "minItems": 5
+        },
+        "skills": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "welcome",
+            "troubleshooting"
+          ],
+          "properties": {
+            "welcome": {
+              "const": true
+            },
+            "troubleshooting": {
+              "const": true
+            }
+          }
         }
       }
     },
@@ -472,6 +491,12 @@
             "plugin_tests": {
               "$ref": "#/$defs/pathValue"
             },
+            "welcome_skill": {
+              "$ref": "#/$defs/pathValue"
+            },
+            "troubleshooting_skill": {
+              "$ref": "#/$defs/pathValue"
+            },
             "docs": {
               "$ref": "#/$defs/pathValue"
             },
@@ -506,6 +531,27 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": 2
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "agent": {
+            "required": [
+              "skills"
+            ]
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {
