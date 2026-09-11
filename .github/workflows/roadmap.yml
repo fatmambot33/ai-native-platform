@@ -52,15 +52,18 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const managed = new Set(Object.values(plan.managed_labels));
-
+            const priorityColors = ['b60205', 'd93f0b', 'fbca04'];
+            const prioritySpecs = Object.entries(plan.priority_labels).map(([name, rank]) => ({
+              name,
+              color: priorityColors[Number(rank)] || '5319e7',
+              description: `Human roadmap priority: P${rank}`
+            }));
             const labelSpecs = [
               { name: plan.dashboard.label, color: '5319e7', description: 'Automated product roadmap' },
               { name: plan.managed_labels.now, color: 'd73a4a', description: 'Roadmap horizon: now' },
               { name: plan.managed_labels.next, color: 'fbca04', description: 'Roadmap horizon: next' },
               { name: plan.managed_labels.later, color: '0e8a16', description: 'Roadmap horizon: later' },
-              { name: 'roadmap:priority:p0', color: 'b60205', description: 'Human roadmap priority: P0' },
-              { name: 'roadmap:priority:p1', color: 'd93f0b', description: 'Human roadmap priority: P1' },
-              { name: 'roadmap:priority:p2', color: 'fbca04', description: 'Human roadmap priority: P2' }
+              ...prioritySpecs
             ];
 
             for (const spec of labelSpecs) {
