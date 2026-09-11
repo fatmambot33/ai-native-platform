@@ -157,7 +157,7 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
             "",
             "- Only open issues with a configured candidate label are managed.",
             "- Pull requests and this dashboard issue are excluded.",
-            "- Closing, reopening, or editing an issue refreshes the roadmap.",
+            "- Opening, closing, reopening, editing, or changing labels refreshes the roadmap.",
             "- Automation only changes roadmap labels and this dashboard issue.",
         ]
     )
