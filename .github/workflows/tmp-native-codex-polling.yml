@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Normalize documentation patch
+      - name: Normalize documentation and regression patches
         shell: bash
         run: |
           python - <<'PY'
@@ -65,7 +65,15 @@ jobs:
                   raise RuntimeError("quota lifecycle documentation paragraph missing")
               write(path, text.replace(old, new, 1))
           '''
-          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          text = text[:start] + replacement + text[end:]
+          lines = text.splitlines()
+          lines = [
+              '    assert "+1" in native_reaction'
+              if 'assert ".content ==' in line
+              else line
+              for line in lines
+          ]
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
 
       - name: Apply and validate native Codex polling
