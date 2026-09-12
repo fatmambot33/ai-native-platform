@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Make one-shot patcher tolerant of concurrent gate hardening
+      - name: Make one-shot patcher tolerant of concurrent hardening
         shell: bash
         run: |
           python - <<'PY'
@@ -55,6 +55,27 @@ jobs:
               'run("git", "rm", "-f", ".github/scripts/tmp_quota_patch.py")',
           )
           path.write_text(text, encoding='utf-8')
+
+          tests = Path('tests/test_ai_review_governance_hardening.py')
+          source = tests.read_text(encoding='utf-8')
+          current = '''def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
+              workflow = WORKFLOW.replace(
+                  "  pull_request:\\n", "  pull_request:\\n    types: [synchronize]\\n", 1
+              )
+              _write_repository(tmp_path, workflow)
+              assert any(
+                  "opened, synchronize, reopened, ready_for_review, and edited" in item.message
+                  for item in _findings(tmp_path)
+              )
+          '''
+          normalized = '''def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
+              workflow = WORKFLOW.replace("  pull_request:\\n", "  pull_request:\\n    types: [synchronize]\\n", 1)
+              _write_repository(tmp_path, workflow)
+              assert any("opened, synchronize, reopened, ready_for_review, and edited" in item.message for item in _findings(tmp_path))
+          '''
+          if current not in source:
+              raise SystemExit('current lifecycle regression fixture not found')
+          tests.write_text(source.replace(current, normalized, 1), encoding='utf-8')
           PY
 
       - name: Apply and validate quota-aware governance
