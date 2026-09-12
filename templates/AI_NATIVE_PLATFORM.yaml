@@ -78,7 +78,7 @@ evidence:
     schemas: schemas
     docs: docs
     examples: examples
-    # AI review governance is unreleased and intentionally omitted from the v0.2 starter.
+    # AI review governance is opt-in and intentionally omitted from the v0.3 starter.
     # Consumers may opt in by declaring ai_review_workflow while pinned to an implementing SHA.
     # May point to a security workflow or a document proving native GitHub CodeQL, default setup, or ruleset enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md

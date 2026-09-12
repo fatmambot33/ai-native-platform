@@ -36,16 +36,27 @@ def test_request_mode_never_uses_maintainer_bootstrap_fallback() -> None:
     assert "find_bootstrap_trigger_comment" in trigger
 
 
-def test_clean_reaction_request_must_postdate_current_head_activation() -> None:
+def test_clean_reaction_request_uses_trusted_run_provenance() -> None:
     script = GATE.read_text(encoding="utf-8")
+    trusted = _function_body(script, "trusted_request_run")
     bot = _function_body(script, "find_bot_trigger_comment")
-    bootstrap = _function_body(script, "find_bootstrap_trigger_comment")
 
-    assert ".pull_request.updated_at" in script
-    assert 'select((.pull_request.head.sha // "") == $head)' in script
-    for body in (bot, bootstrap):
-        assert '--arg active_since "$HEAD_ACTIVE_SINCE"' in body
-        assert 'select((.created_at // "") >= $active_since)' in body
+    assert ".pull_request.updated_at" not in script
+    assert '.event == "pull_request_target"' in trusted
+    assert ".workflow_id" in trusted
+    assert ".path == $workflow_path" in trusted
+    assert ".pull_requests[]?" in trusted
+    assert '(.head.sha // "") == $head' in trusted
+    assert "ai-native-codex-review-run" in bot
+
+
+def test_request_comment_records_request_run_id() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    request = _function_body(script, "request_review")
+
+    assert "RUN_MARKER" in script
+    assert '"$RUN_MARKER"' in request
+
 
 
 def test_thread_pagination_errors_fail_closed() -> None:

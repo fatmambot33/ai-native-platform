@@ -399,6 +399,8 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         ".github/workflows/codex-review.yml",
         ".github/CODEOWNERS",
         "actions/codex-review-gate/action.yml",
+        "actions/codex-review-gate/codex-review-gate.sh",
+        ".github/workflows/__ai_native_required_check_probe__.yml",
         "schemas/ai-native-platform.schema.json",
         "standard/AI_NATIVE_PLATFORM.yaml",
         "ai_native.py",

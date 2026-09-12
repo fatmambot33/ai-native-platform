@@ -315,8 +315,11 @@ def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
     return set()
 
 
-def _event_runs_on_synchronize(workflow: Mapping[Any, Any], event_name: str) -> bool:
-    """Return whether an event is unrestricted or explicitly includes synchronize."""
+def _event_runs_on_required_pr_activities(
+    workflow: Mapping[Any, Any], event_name: str
+) -> bool:
+    """Return whether a PR event covers every current-HEAD transition."""
+    required = {"opened", "synchronize", "reopened", "ready_for_review"}
     events = _workflow_events_value(workflow)
     if isinstance(events, str):
         return events == event_name
@@ -332,11 +335,10 @@ def _event_runs_on_synchronize(workflow: Mapping[Any, Any], event_name: str) -> 
     types = config.get("types")
     if types is None:
         return True
-    if isinstance(types, str):
-        return types == "synchronize"
     if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
-        return "synchronize" in types
+        return required <= {str(item) for item in types}
     return False
+
 
 
 def _event_runs_on_review_dismissal(workflow: Mapping[Any, Any]) -> bool:
@@ -524,12 +526,23 @@ def _codeowners_effective_owners(root: Path, relative: Path) -> list[str] | None
     return effective_owners
 
 
+def _valid_codeowner(owner: str) -> bool:
+    """Return whether a CODEOWNERS owner token has a supported identity shape."""
+    handle = re.fullmatch(
+        r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?",
+        owner,
+    )
+    email = re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", owner)
+    return handle is not None or email is not None
+
+
 def _codeowners_covers_path(root: Path, relative: Path) -> bool:
     """Return whether the effective CODEOWNERS rule assigns valid owners."""
     effective_owners = _codeowners_effective_owners(root, relative)
     return bool(effective_owners) and all(
-        owner.startswith("@") for owner in effective_owners
+        _valid_codeowner(owner) for owner in effective_owners
     )
+
 
 
 def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
@@ -539,7 +552,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     if (
         relative.is_absolute()
         or ".." in relative.parts
-        or len(relative.parts) < 3
+        or len(relative.parts) != 3
         or relative.parts[0:2] != (".github", "workflows")
         or relative.suffix not in {".yml", ".yaml"}
     ):
@@ -585,8 +598,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     for event_name in ("pull_request", "pull_request_target"):
         if event_name not in events:
             failures.append(f"missing {event_name} event")
-        elif not _event_runs_on_synchronize(workflow, event_name):
-            failures.append(f"{event_name} must run on synchronize")
+        elif not _event_runs_on_required_pr_activities(workflow, event_name):
+            failures.append(
+                f"{event_name} must run on opened, synchronize, reopened, and ready_for_review"
+            )
     if "pull_request_review" not in events or not _event_runs_on_review_dismissal(workflow):
         failures.append("pull_request_review must run on dismissed review events")
 
@@ -620,6 +635,16 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         failures.append("request job must not suppress job failures")
     if wait.get("continue-on-error") not in (None, False):
         failures.append("codex-review job must not suppress job failures")
+    for label, job in (("request", request), ("codex-review", wait)):
+        runner = job.get("runs-on")
+        if not isinstance(runner, str) or not runner.strip():
+            failures.append(f"{label} job must declare a nonempty runs-on runner")
+        if "timeout-minutes" in job:
+            failures.append(f"{label} job must not override timeout-minutes")
+        if "concurrency" in job:
+            failures.append(f"{label} job must not override workflow concurrency")
+    if wait.get("name") not in (None, "codex-review"):
+        failures.append("codex-review job name must remain codex-review")
 
     if not _uses_event(request, "pull_request_target"):
         failures.append("request job condition must canonically bind pull_request_target")
@@ -629,17 +654,26 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         )
 
     request_permissions = _job_permissions(request)
-    if request_permissions.get("issues") != "write":
-        failures.append("request job must grant issues: write")
-    if request_permissions.get("pull-requests") != "read":
-        failures.append("request job must grant pull-requests: read")
+    expected_request_permissions = {
+        "contents": "read",
+        "issues": "write",
+        "pull-requests": "read",
+    }
+    if dict(request_permissions) != expected_request_permissions:
+        failures.append(
+            "request job permissions must be exactly contents: read, issues: write, "
+            "and pull-requests: read"
+        )
     wait_permissions = _job_permissions(wait)
-    if wait_permissions.get("issues") != "read":
-        failures.append("codex-review job must grant issues: read")
-    if wait_permissions.get("pull-requests") != "read":
-        failures.append("codex-review job must grant pull-requests: read")
-    if any(str(permission).lower() == "write" for permission in wait_permissions.values()):
-        failures.append("codex-review job must remain read-only")
+    expected_wait_permissions = {
+        "contents": "read",
+        "issues": "read",
+        "pull-requests": "read",
+    }
+    if dict(wait_permissions) != expected_wait_permissions:
+        failures.append(
+            "codex-review job permissions must be exactly contents/issues/pull-requests: read"
+        )
 
     concurrency = workflow.get("concurrency", {})
     expected_group = "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
@@ -666,6 +700,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     if not _codeowners_covers_path(root, relative):
         failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
+    if not _codeowners_covers_path(
+        root, Path(".github/workflows/__ai_native_required_check_probe__.yml")
+    ):
+        failures.append("the entire .github/workflows namespace must be CODEOWNERS-protected")
     if not _codeowners_covers_path(root, Path(".github/CODEOWNERS")):
         failures.append(".github/CODEOWNERS must protect itself with an effective owner rule")
 

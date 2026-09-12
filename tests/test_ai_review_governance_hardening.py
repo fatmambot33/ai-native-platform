@@ -22,6 +22,7 @@ concurrency:
 jobs:
   request:
     if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
@@ -35,6 +36,7 @@ jobs:
           mode: request
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: read
@@ -228,3 +230,69 @@ def test_codeowners_ignores_commented_rules(tmp_path: Path) -> None:
     assert _codeowners_effective_owners(
         tmp_path, Path(".github/workflows/codex-review.yml")
     ) is None
+
+
+
+def test_review_gate_rejects_extra_request_write_permissions(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("      contents: read\n      issues: write", "      contents: write\n      issues: write")
+    _write_repository(tmp_path, workflow)
+    assert any("permissions must be exactly" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("  pull_request:\n", "  pull_request:\n    types: [synchronize]\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("opened, synchronize, reopened, and ready_for_review" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_runner(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must declare a nonempty runs-on runner" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_concurrency_override(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    concurrency: global\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must not override workflow concurrency" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_timeout_override(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    timeout-minutes: 1\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must not override timeout-minutes" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_preserves_required_check_name(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("  codex-review:\n", "  codex-review:\n    name: Not the required check\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("job name must remain codex-review" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_top_level_workflow_file(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    nested = tmp_path / ".github" / "workflows" / "archive" / "codex-review.yml"
+    nested.parent.mkdir(parents=True)
+    nested.write_text(WORKFLOW, encoding="utf-8")
+    findings = _single_ai_review_workflow_findings(
+        ".github/workflows/archive/codex-review.yml", tmp_path
+    )
+    assert any("must point to a .github/workflows YAML file" in item.message for item in findings)
+
+
+def test_review_gate_rejects_invalid_codeowner_identity(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    owners = tmp_path / ".github" / "CODEOWNERS"
+    owners.write_text("/.github/workflows/** @\n/.github/CODEOWNERS @\n", encoding="utf-8")
+    assert any("CODEOWNERS" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_workflow_namespace_ownership(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    owners = tmp_path / ".github" / "CODEOWNERS"
+    owners.write_text(
+        "/.github/workflows/codex-review.yml @repository-owner\n"
+        "/.github/CODEOWNERS @repository-owner\n",
+        encoding="utf-8",
+    )
+    assert any("entire .github/workflows namespace" in item.message for item in _findings(tmp_path))

@@ -35,6 +35,7 @@ concurrency:
 jobs:
   request:
     if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
@@ -48,6 +49,7 @@ jobs:
           mode: request
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: read

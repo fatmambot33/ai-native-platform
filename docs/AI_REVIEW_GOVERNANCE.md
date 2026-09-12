@@ -49,9 +49,9 @@ The CODEOWNERS patterns are intentionally narrow, so ordinary source, documentat
 
 `actions/codex-review-gate` accepts only the real Codex connector identities, rejects dismissed reviews, matches submitted reviews by the full GitHub review `commit_id`, paginates GitHub API reads, and never treats an older review as sufficient for a newer HEAD.
 
-A clean reaction normally comes from the HEAD-specific request created by the trusted request job. The request must remain unedited (`created_at == updated_at`), must contain the full current-HEAD marker, and must have been created no earlier than the server-supplied activation timestamp for that exact PR HEAD.
+A clean reaction normally comes from the HEAD-specific request created by the trusted request job. The request must remain unedited (`created_at == updated_at`), contain the full current-HEAD marker, and carry the request workflow run ID. The wait gate verifies that run through GitHub's server API: it must be the same workflow ID and workflow path, must have been triggered by `pull_request_target`, and GitHub must associate it with the exact pull request number and HEAD SHA before the request reaction is trusted. This avoids using mutable pull-request timestamps or contributor-controlled commit dates as freshness evidence.
 
-The one-time bootstrap path also accepts an unedited request from an `OWNER`, `MEMBER`, or `COLLABORATOR` when the new trusted `pull_request_target` workflow is not yet present on the default branch. The first line must be the exact `@codex review` command, the comment must contain the full current-HEAD marker, and its creation time must be at or after the current HEAD activation timestamp. Request mode never creates or relies on this maintainer fallback; it exists only so the bootstrap wait path can validate genuine Codex clean-reaction evidence without rebinding an older reaction.
+The one-time bootstrap path also accepts an unedited request from an `OWNER`, `MEMBER`, or `COLLABORATOR` when the new trusted `pull_request_target` workflow is not yet present on the default branch. The first line must be the exact `@codex review` command and the comment must contain the full current-HEAD marker. This is an explicitly privileged bootstrap exception rather than automated run provenance; request mode never creates or relies on it.
 
 ## GitHub protection
 
@@ -79,7 +79,7 @@ The required `codex-review` job additionally reads issue/review state but has no
 
 `evidence.paths.ai_review_workflow` is opt-in for version-one manifests. Existing v1 manifests do not become invalid merely because they predate this governance feature.
 
-When a repository declares `ai_review_workflow`, conformance validation verifies that it points to a real `.github/workflows/*.yml` or `.yaml` file with current-HEAD and review-dismissal event coverage, immutable canonical action pins, request/wait separation, evaluated PR/event-scoped cancellation, positive numeric timing overrides when supplied, no writable status/check API, and effective CODEOWNERS protection for both the workflow and `.github/CODEOWNERS` itself.
+When a repository declares `ai_review_workflow`, conformance validation verifies that it points to a real `.github/workflows/*.yml` or `.yaml` file with current-HEAD and review-dismissal event coverage, immutable canonical action pins, request/wait separation, evaluated PR/event-scoped cancellation, positive numeric timing overrides when supplied, no job-level timeout/concurrency overrides, exact least-privilege permissions, executable runners, a stable `codex-review` check name, no writable status/check API, and effective CODEOWNERS protection for the full workflow namespace plus `.github/CODEOWNERS` itself.
 
 CODEOWNERS matching follows root-anchor semantics: a leading `/` anchors the rule to the repository root, and the effective last matching non-comment rule determines ownership. Commented rules and ownerless final overrides do not satisfy governance protection.
 
