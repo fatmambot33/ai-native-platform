@@ -7,17 +7,17 @@ on:
       - .github/workflows/align-codex-governance.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  align:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           ref: align/codex-governance
           fetch-depth: 0
-      - name: Inspect merge conflicts
+      - name: Merge governance onto current main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -26,9 +26,19 @@ jobs:
           git merge --no-commit --no-ff origin/chore/codex-review-gate
           status=$?
           set -e
-          echo "merge_status=$status"
-          echo "--- unmerged files ---"
-          git diff --name-only --diff-filter=U || true
-          echo "--- status ---"
-          git status --short
-          test "$status" -ne 0
+          if [ "$status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            expected=$'CHANGELOG.md\nREADME.md'
+            if [ "$conflicts" != "$expected" ]; then
+              echo "Unexpected merge conflicts:" >&2
+              printf '%s\n' "$conflicts" >&2
+              exit 1
+            fi
+            git checkout --ours CHANGELOG.md README.md
+            git add CHANGELOG.md README.md
+          fi
+          rm .github/workflows/align-codex-governance.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: align current-HEAD Codex governance with v0.3"
+          git push origin HEAD:align/codex-governance
