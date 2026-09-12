@@ -125,12 +125,20 @@ merge (GitHub strict required-status-check policy or an equivalent rule). This
 prevents a clean review for an older base revision from remaining mergeable
 after the base advances. The reference repository enforces this rule.
 
-When the exact current HEAD/base pair is green and merge-ready, apply the
-one-shot `codex:review` label. The privileged `pull_request_target` path runs
-only for that label. Both request and wait jobs require `actions: read` so
-server-verified workflow-run provenance also works in private repositories.
-The request is deduplicated while pending, but a dismissed matching review may
-be deliberately replaced by applying the label again.
+When repository-level Codex automatic review is enabled, opening a non-draft
+pull request or marking a draft ready already starts Codex. The required wait
+job reuses that native review and treats the current GitHub workflow run's
+server timestamp as the activation boundary. It accepts only exact-current-HEAD
+Codex review evidence created after that boundary (or a clean Codex PR reaction
+created after it), and it never emits a second `@codex review` request for the
+same checkpoint.
+
+The one-shot `codex:review` label remains an explicit fallback or retry path
+when no native review is available or an earlier request ended terminally. Both
+request and wait jobs require `actions: read` so server-verified workflow-run
+provenance also works in private repositories. Label-triggered requests remain
+deduplicated while pending, and a dismissed matching review may be deliberately
+replaced by applying the label again.
 
 If Codex reports code-review quota exhaustion or a terminal request failure,
 the gate fails closed and never retries automatically. Re-apply the label only

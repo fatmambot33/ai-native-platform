@@ -106,3 +106,22 @@ def test_review_requests_are_quota_aware() -> None:
     assert "still pending; preserving quota" in request
     assert "reached your Codex usage limits for code reviews" in failure
     assert "No automatic retry will be attempted" in failure
+
+
+def test_ready_for_review_reuses_native_codex_evidence() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    native_event = _function_body(script, "is_native_review_event")
+    native_review = _function_body(script, "has_native_matching_review")
+    native_reaction = _function_body(script, "has_native_clean_reaction")
+
+    assert "ready_for_review" in native_event
+    assert "opened" in native_event
+    assert "commit_id" in native_review
+    assert "$head" in native_review
+    assert "submitted_at" in native_review
+    assert "$since" in native_review
+    assert "issues/${PR_NUMBER}/reactions?per_page=100" in native_reaction
+    assert "+1" in native_reaction
+    assert "created_at" in native_reaction
+    assert "$since" in native_reaction
+    assert "no duplicate request will be sent" in script
