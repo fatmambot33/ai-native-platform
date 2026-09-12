@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "db5cb7440dac086137afc93e32a69a6230556f57",
+        "fce175de5b4252a748de4e29176ab3eea4f3c717",
     }
 )
 
@@ -329,12 +329,12 @@ def _event_runs_on_required_pr_activities(
         return False
     config = events[event_name]
     if config is None:
-        return True
+        return False
     if not isinstance(config, Mapping):
         return False
     types = config.get("types")
     if types is None:
-        return True
+        return False
     if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
         return required <= {str(item) for item in types}
     return False
@@ -594,6 +594,14 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         ]
 
     workflow_path = root / relative
+    if workflow_path.is_symlink():
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow must be a regular file, not a symlink.",
+                path_name,
+            )
+        ]
     if not workflow_path.is_file():
         return [
             Finding(
@@ -674,6 +682,8 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"{label} job must run on canonical ubuntu-latest")
         if "container" in job:
             failures.append(f"{label} job must not declare a container")
+        if "services" in job:
+            failures.append(f"{label} job must not declare services")
         if "strategy" in job:
             failures.append(f"{label} job must not declare a strategy or matrix")
         if "timeout-minutes" in job:
@@ -719,8 +729,8 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     concurrency = workflow.get("concurrency", {})
     expected_group = "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
-    if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not True:
-        failures.append("concurrency must cancel superseded runs")
+    if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not False:
+        failures.append("concurrency must preserve active review polling")
     elif concurrency.get("group") != expected_group:
         failures.append("concurrency must use the canonical evaluated concurrency group")
 

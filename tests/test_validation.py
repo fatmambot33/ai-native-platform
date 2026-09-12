@@ -17,10 +17,8 @@ from ai_native import (
     validate_manifest,
 )
 
-AI_REVIEW_GATE_REF = "db5cb7440dac086137afc93e32a69a6230556f57"
-AI_REVIEW_ACTION = (
-    "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
-)
+AI_REVIEW_GATE_REF = "fce175de5b4252a748de4e29176ab3eea4f3c717"
+AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
   pull_request:
@@ -33,7 +31,7 @@ permissions:
   contents: read
 concurrency:
   group: codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   request:
     if: >-
@@ -110,8 +108,7 @@ def _materialize_evidence(root: Path, data: dict) -> None:
         codeowners = root / ".github" / "CODEOWNERS"
         codeowners.parent.mkdir(parents=True, exist_ok=True)
         codeowners.write_text(
-            "/.github/workflows/** @repository-owner\n"
-            "/.github/CODEOWNERS @repository-owner\n",
+            "/.github/workflows/** @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
             encoding="utf-8",
         )
 
@@ -166,8 +163,7 @@ def test_manifest_v2_requires_welcome_and_troubleshooting_skills() -> None:
     findings = contract_findings(data)
 
     assert any(
-        finding.code == "schema.invalid" and finding.path == "agent.skills"
-        for finding in findings
+        finding.code == "schema.invalid" and finding.path == "agent.skills" for finding in findings
     )
 
 
@@ -211,8 +207,7 @@ def test_missing_welcome_skill_evidence_fails(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
-        finding.code == "evidence.path_missing"
-        and finding.path == "evidence.paths.welcome_skill"
+        finding.code == "evidence.path_missing" and finding.path == "evidence.paths.welcome_skill"
         for finding in findings
     )
 
@@ -232,8 +227,7 @@ def test_upgrade_migrates_v1_to_v2_agent_skills() -> None:
     assert migrated["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
     assert migrated["evidence"]["paths"]["welcome_skill"] == "skills/welcome/SKILL.md"
     assert (
-        migrated["evidence"]["paths"]["troubleshooting_skill"]
-        == "skills/troubleshooting/SKILL.md"
+        migrated["evidence"]["paths"]["troubleshooting_skill"] == "skills/troubleshooting/SKILL.md"
     )
 
 
@@ -416,8 +410,7 @@ def test_ai_review_workflow_rejects_pr_head_execution_in_request_job(tmp_path: P
         "      - uses: actions/checkout@v4\n"
         "        with:\n"
         "          ref: ${{ github.event.pull_request.head.sha }}\n"
-        "      - uses: "
-        + AI_REVIEW_ACTION,
+        "      - uses: " + AI_REVIEW_ACTION,
         1,
     )
 
@@ -452,8 +445,7 @@ def test_ai_review_workflow_rejects_ignored_gate_failure(tmp_path: Path) -> None
 
 def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
     canonical = (
-        "if: (github.event_name == 'pull_request' || "
-        "github.event_name == 'pull_request_review')"
+        "if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
     )
     findings = _validate_ai_review_text(
         tmp_path,
@@ -582,8 +574,7 @@ def test_plugin_profile_requires_plugin_evidence(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
-        finding.code == "evidence.path_missing"
-        and finding.path == "evidence.paths.plugin_manifest"
+        finding.code == "evidence.path_missing" and finding.path == "evidence.paths.plugin_manifest"
         for finding in findings
     )
 

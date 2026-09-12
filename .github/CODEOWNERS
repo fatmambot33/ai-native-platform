@@ -1,5 +1,6 @@
-* @fatmambot33
 /.github/workflows/** @fatmambot33
+/.github/scripts/** @fatmambot33
+/tools/** @fatmambot33
 /.github/CODEOWNERS @fatmambot33
 /actions/codex-review-gate/** @fatmambot33
 /schemas/** @fatmambot33

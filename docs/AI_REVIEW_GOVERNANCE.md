@@ -22,7 +22,7 @@ The `pull_request_target` job is loaded from the protected base branch. It never
 
 The `pull_request` job is the normal required `codex-review` check. A `pull_request_review` dismissal event runs the same read-only gate again so explicitly dismissed Codex evidence cannot leave a previously green result trusted. Both paths evaluate exactly `github.event.pull_request.head.sha` while ordinary CI runs in parallel.
 
-Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR-scoped concurrency uses the evaluated `${{ github.event_name }}` and `${{ github.event.pull_request.number }}` expressions so separate PRs and separate request/wait event classes cannot cancel one another accidentally.
+Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR-scoped concurrency still separates event classes and pull requests, but cancellation is disabled. A merge-ready polling run therefore remains active when another event for the same pull request arrives.
 
 The required result is therefore not a raw commit status created through `statuses: write` or `checks: write`; those write scopes are intentionally absent from the governance workflow.
 
@@ -43,7 +43,7 @@ The framework repository additionally protects its reusable gate action:
 
 Enable **Require review from Code Owners** in the protected-main pull-request rule and also enable **Dismiss stale pull request approvals when new commits are pushed** (or an equivalent rule that requires approval of the most recent reviewable push). Without a current-push approval rule, an approval for an earlier benign governance revision can remain valid after the PR-loaded gate is changed.
 
-The CODEOWNERS patterns are intentionally narrow, so ordinary source, documentation, and test changes still require zero human approvals. Governance/workflow changes are exceptional and require a fresh code-owner review or an explicitly authorized repository-owner bypass.
+The CODEOWNERS patterns are intentionally narrow. This reference repository protects workflows, governance code, `.github/scripts/**`, and `tools/**`, while ordinary source, documentation, and test changes remain outside those code-owner rules. Governance and privileged automation changes are exceptional and require a fresh code-owner review or an explicitly authorized repository-owner bypass.
 
 ## Reference action
 
@@ -51,7 +51,7 @@ The CODEOWNERS patterns are intentionally narrow, so ordinary source, documentat
 
 A clean reaction normally comes from the HEAD-specific request created by the trusted request job. The request must remain unedited (`created_at == updated_at`), contain the full current head/base marker, and carry the request workflow run ID. The wait gate verifies that run through GitHub's server API: it must be the same workflow ID and workflow path, must have been triggered by `pull_request_target`, and GitHub must associate it with the exact pull request number, HEAD SHA, and base SHA before the request reaction is trusted. This avoids using mutable pull-request timestamps or contributor-controlled commit dates as freshness evidence.
 
-The one-time bootstrap path also accepts an unedited request from an `OWNER`, `MEMBER`, or `COLLABORATOR` when the new trusted `pull_request_target` workflow is not yet present on the default branch. The first line must be the exact `@codex review` command and the comment must contain the full current head/base marker. This is an explicitly privileged bootstrap exception rather than automated run provenance; request mode never creates or relies on it.
+The one-time bootstrap path accepts an unedited request from an `OWNER`, `MEMBER`, or `COLLABORATOR` when the new trusted `pull_request_target` workflow is not yet present on the default branch. The first line must be the exact `@codex review` command and the comment must contain the full current head/base marker. Bootstrap evidence is accepted only from a submitted Codex review whose GitHub `commit_id` matches the exact current HEAD and whose submission follows that request; reaction-only bootstrap evidence is never trusted. This is an explicitly privileged bootstrap exception rather than automated run provenance; request mode never creates or relies on it.
 
 ## GitHub protection
 
@@ -68,12 +68,20 @@ permissions:
 
 # trusted pull_request_target request job only
 permissions:
+  actions: read
   contents: read
   issues: write
   pull-requests: read
+
+# required pull_request / pull_request_review wait job
+permissions:
+  actions: read
+  contents: read
+  issues: read
+  pull-requests: read
 ```
 
-The required `codex-review` job additionally reads issue/review state but has no write scope. Job-level and step-level `continue-on-error` are forbidden so a missing, timed-out, or failed review cannot be converted into a successful governance result.
+Both jobs need `actions: read` to verify GitHub-hosted workflow-run provenance, including in private repositories. The required `codex-review` job has no write scope. Job-level and step-level `continue-on-error` are forbidden so a missing, timed-out, or failed review cannot be converted into a successful governance result.
 
 ## Evidence contract
 

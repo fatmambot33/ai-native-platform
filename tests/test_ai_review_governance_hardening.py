@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_findings
 
-GATE_REF = "db5cb7440dac086137afc93e32a69a6230556f57"
+GATE_REF = "fce175de5b4252a748de4e29176ab3eea4f3c717"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
@@ -20,7 +20,7 @@ permissions:
   contents: read
 concurrency:
   group: codex-review-${{{{ github.event_name }}}}-${{{{ github.event.pull_request.number }}}}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   request:
     if: >-
@@ -256,17 +256,13 @@ def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
         1,
     )
     _write_repository(tmp_path, workflow)
-    assert any(
-        "opened, synchronize, reopened" in item.message for item in _findings(tmp_path)
-    )
+    assert any("opened, synchronize, reopened" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_requires_runner(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "", 1)
     _write_repository(tmp_path, workflow)
-    assert any(
-        "canonical ubuntu-latest" in item.message for item in _findings(tmp_path)
-    )
+    assert any("canonical ubuntu-latest" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_rejects_job_concurrency_override(tmp_path: Path) -> None:
@@ -341,6 +337,7 @@ def test_review_gate_requires_edited_activity_when_types_are_restricted(tmp_path
     _write_repository(tmp_path, workflow)
     assert any("edited, and labeled" in item.message for item in _findings(tmp_path))
 
+
 def test_review_gate_restricts_target_to_review_label(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
         "  pull_request_target:\n    types: [labeled]\n",
@@ -403,3 +400,35 @@ def test_review_gate_rejects_bash_unsafe_timing_strings(tmp_path: Path) -> None:
     )
     _write_repository(tmp_path, workflow)
     assert any("positive timing overrides" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_explicit_pr_activity_types(tmp_path: Path) -> None:
+    full_types = (
+        "  pull_request:\n"
+        "    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]\n"
+    )
+    workflow = WORKFLOW.replace(full_types, "  pull_request:\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("opened, synchronize, reopened" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_services(tmp_path: Path) -> None:
+    services = (
+        "    runs-on: ubuntu-latest\n"
+        "    services:\n"
+        "      attacker:\n"
+        "        image: attacker/image:latest\n"
+    )
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", services, 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must not declare services" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_symlinked_workflow(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    workflow = tmp_path / ".github" / "workflows" / "codex-review.yml"
+    target = tmp_path / "trusted-looking.yml"
+    target.write_text(WORKFLOW, encoding="utf-8")
+    workflow.unlink()
+    workflow.symlink_to(target)
+    assert any("regular file, not a symlink" in item.message for item in _findings(tmp_path))

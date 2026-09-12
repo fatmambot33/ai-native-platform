@@ -12,16 +12,19 @@ def _function_body(script: str, name: str) -> str:
     return remainder.split("\n}\n", 1)[0]
 
 
-def test_bootstrap_clean_reaction_requires_trusted_unedited_head_marker() -> None:
+def test_bootstrap_reaction_is_not_accepted_as_clean_evidence() -> None:
     script = GATE.read_text(encoding="utf-8")
     bootstrap = _function_body(script, "find_bootstrap_trigger_comment")
+    reaction = _function_body(script, "has_trigger_clean_reaction")
+    review = _function_body(script, "has_matching_review")
 
     assert '(.author_association // "") == "OWNER"' in bootstrap
-    assert '(.author_association // "") == "MEMBER"' in bootstrap
-    assert '(.author_association // "") == "COLLABORATOR"' in bootstrap
-    assert '(.created_at // "") == (.updated_at // "")' in bootstrap
-    assert 'test("^@codex review' in bootstrap
-    assert "contains($marker)" in bootstrap
+    assert "find_bot_trigger_comment" in reaction
+    assert "find_trigger_comment" not in reaction
+    assert "find_trigger_comment" in review
+    assert "commit_id" in review
+    assert "$head" in review
+    assert ".submitted_at" in review
 
 
 def test_request_mode_never_uses_maintainer_bootstrap_fallback() -> None:
@@ -59,7 +62,6 @@ def test_request_comment_records_request_run_id() -> None:
     assert '"$RUN_MARKER"' in request
 
 
-
 def test_thread_pagination_errors_fail_closed() -> None:
     script = GATE.read_text(encoding="utf-8")
     threads = _function_body(script, "has_unresolved_codex_threads")
@@ -74,7 +76,6 @@ def test_thread_pagination_errors_fail_closed() -> None:
     assert "Unable to prove that all Codex review threads are resolved" in clear
 
 
-
 def test_matching_review_must_follow_current_head_base_request() -> None:
     script = GATE.read_text(encoding="utf-8")
     review = _function_body(script, "has_matching_review")
@@ -84,6 +85,7 @@ def test_matching_review_must_follow_current_head_base_request() -> None:
     assert ".submitted_at" in review
     assert "$since" in review
     assert "${HEAD_SHA}:${BASE_SHA}" in script
+
 
 def test_explicit_label_can_replace_a_dismissed_review() -> None:
     script = GATE.read_text(encoding="utf-8")
