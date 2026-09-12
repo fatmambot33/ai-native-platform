@@ -7,7 +7,7 @@ on:
       - .github/workflows/apply-base-revision-hardening.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   apply:
@@ -46,12 +46,21 @@ jobs:
         run: |
           python -m pytest -q
           python validator/validate_standard.py
-      - name: Commit base-revision hardening
+      - name: Package validated files
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm .github/workflows/apply-base-revision-hardening.yml
-          rm .github/scripts/apply_base_revision_hardening.py
-          git add -A
-          git commit -m "fix: bind AI review to base revision"
-          git push origin HEAD:align/codex-governance
+          tar -czf /tmp/base-revision-patch.tar.gz \
+            actions/codex-review-gate/action.yml \
+            actions/codex-review-gate/codex-review-gate.sh \
+            .github/workflows/codex-review.yml \
+            ai_native.py \
+            tests/test_ai_review_governance_hardening.py \
+            tests/test_validation.py \
+            tests/test_codex_review_gate.py \
+            docs/AI_REVIEW_GOVERNANCE.md \
+            CHANGELOG.md \
+            RELEASE_NOTES.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validated-base-revision-patch
+          path: /tmp/base-revision-patch.tar.gz
+          if-no-files-found: error
