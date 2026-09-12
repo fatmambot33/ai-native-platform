@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited, labeled]
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]
+    types: [labeled]
   pull_request_review:
     types: [dismissed]
 
@@ -17,35 +17,39 @@ concurrency:
 
 jobs:
   request:
-    if: github.event_name == 'pull_request_target' && github.event.pull_request.draft == false
+    if: github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'codex:review' && github.event.pull_request.draft == false
     permissions:
+      actions: read
       contents: read
       issues: write
       pull-requests: read
     runs-on: ubuntu-latest
     steps:
-      - name: Request Codex review of current HEAD
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@6f365e9bfba6a44bc208e8acd778809fd7eb1c49
+      - name: Request one merge-ready Codex review
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@db5cb7440dac086137afc93e32a69a6230556f57
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
           base-sha: ${{ github.event.pull_request.base.sha }}
           mode: request
+          request-label: codex:review
 
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && github.event.pull_request.draft == false
     permissions:
+      actions: read
       contents: read
       issues: read
       pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - name: Require Codex review of current HEAD and resolved threads
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@6f365e9bfba6a44bc208e8acd778809fd7eb1c49
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@db5cb7440dac086137afc93e32a69a6230556f57
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
           base-sha: ${{ github.event.pull_request.base.sha }}
           mode: wait
+          request-label: codex:review
