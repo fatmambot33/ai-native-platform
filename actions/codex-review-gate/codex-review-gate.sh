@@ -5,6 +5,7 @@ set -euo pipefail
 : "${REPO:?REPO is required}"
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
+: "${BASE_SHA:?BASE_SHA is required}"
 : "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
 : "${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}"
 
@@ -12,9 +13,10 @@ MODE="${CODEX_REVIEW_MODE:-wait}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 SHORT_SHA="${HEAD_SHA:0:10}"
-MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
+MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA}:${BASE_SHA} -->"
 RUN_MARKER="<!-- ai-native-codex-review-run:${GITHUB_RUN_ID} -->"
 COMMENT_ID=""
+COMMENT_CREATED_AT=""
 OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
 WORKFLOW_PATH="${GITHUB_WORKFLOW_REF#${REPO}/}"
@@ -32,10 +34,13 @@ api_list() {
 
 has_matching_review() {
   local reviews
+  find_trigger_comment
+  [[ -n "$COMMENT_ID" && -n "$COMMENT_CREATED_AT" ]] || return 1
   reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
   jq -e \
     --arg head "$HEAD_SHA" \
-    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
+    --arg since "$COMMENT_CREATED_AT" \
+    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
     <<<"$reviews" >/dev/null
 }
 
@@ -136,13 +141,14 @@ trusted_request_run() {
     --arg workflow_id "$workflow_id" \
     --arg workflow_path "$WORKFLOW_PATH" \
     --arg head "$HEAD_SHA" \
+    --arg base "$BASE_SHA" \
     --arg created_at "$comment_created_at" \
     --argjson pr "$PR_NUMBER" \
     '(.workflow_id | tostring) == $workflow_id
      and .event == "pull_request_target"
      and .path == $workflow_path
      and ((.created_at // "") <= $created_at)
-     and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head)' \
+     and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head and (.base.sha // "") == $base)' \
     <<<"$run" >/dev/null
 }
 
@@ -157,6 +163,7 @@ find_bot_trigger_comment() {
     [[ -n "$id" ]] || continue
     if trusted_request_run "$run_id" "$created_at"; then
       COMMENT_ID="$id"
+      COMMENT_CREATED_AT="$created_at"
       return 0
     fi
     status=$?
@@ -183,10 +190,11 @@ find_bot_trigger_comment() {
 }
 
 find_bootstrap_trigger_comment() {
-  local comments
+  local comments row
   COMMENT_ID=""
+  COMMENT_CREATED_AT=""
   comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
-  COMMENT_ID="$(
+  row="$(
     jq -r \
       --arg marker "$MARKER" \
       '[
@@ -199,13 +207,17 @@ find_bootstrap_trigger_comment() {
         | select((.created_at // "") == (.updated_at // ""))
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
-      ] | last | .id // empty' \
+      ] | last | if . == null then "" else [.id, .created_at] | @tsv end' \
       <<<"$comments"
   )"
+  if [[ -n "$row" ]]; then
+    IFS=$'\t' read -r COMMENT_ID COMMENT_CREATED_AT <<<"$row"
+  fi
 }
 
 find_trigger_comment() {
   COMMENT_ID=""
+  COMMENT_CREATED_AT=""
   find_bot_trigger_comment
   if [[ -z "$COMMENT_ID" ]]; then
     find_bootstrap_trigger_comment

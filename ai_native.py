@@ -319,7 +319,7 @@ def _event_runs_on_required_pr_activities(
     workflow: Mapping[Any, Any], event_name: str
 ) -> bool:
     """Return whether a PR event covers every current-HEAD transition."""
-    required = {"opened", "synchronize", "reopened", "ready_for_review"}
+    required = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
     events = _workflow_events_value(workflow)
     if isinstance(events, str):
         return events == event_name
@@ -430,6 +430,7 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
         "token": "${{ github.token }}",
         "pr-number": "${{ github.event.pull_request.number }}",
         "head-sha": "${{ github.event.pull_request.head.sha }}",
+        "base-sha": "${{ github.event.pull_request.base.sha }}",
         "mode": mode,
     }
     if any(inputs.get(key) != value for key, value in required_inputs.items()):
@@ -600,7 +601,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"missing {event_name} event")
         elif not _event_runs_on_required_pr_activities(workflow, event_name):
             failures.append(
-                f"{event_name} must run on opened, synchronize, reopened, and ready_for_review"
+                f"{event_name} must run on opened, synchronize, reopened, ready_for_review, and edited"
             )
     if "pull_request_review" not in events or not _event_runs_on_review_dismissal(workflow):
         failures.append("pull_request_review must run on dismissed review events")

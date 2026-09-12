@@ -47,6 +47,7 @@ def test_clean_reaction_request_uses_trusted_run_provenance() -> None:
     assert ".path == $workflow_path" in trusted
     assert ".pull_requests[]?" in trusted
     assert '(.head.sha // "") == $head' in trusted
+    assert '(.base.sha // "") == $base' in trusted
     assert "ai-native-codex-review-run" in bot
 
 
@@ -71,3 +72,15 @@ def test_thread_pagination_errors_fail_closed() -> None:
     assert "thread_status" in clear
     assert 'if [[ "$thread_status" -eq 1 ]]' in clear
     assert "Unable to prove that all Codex review threads are resolved" in clear
+
+
+
+def test_matching_review_must_follow_current_head_base_request() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    review = _function_body(script, "has_matching_review")
+
+    assert "find_trigger_comment" in review
+    assert "COMMENT_CREATED_AT" in review
+    assert ".submitted_at" in review
+    assert "$since" in review
+    assert "${HEAD_SHA}:${BASE_SHA}" in script

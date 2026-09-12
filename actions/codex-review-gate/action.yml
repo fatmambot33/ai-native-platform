@@ -11,6 +11,9 @@ inputs:
   head-sha:
     description: Current pull request HEAD SHA.
     required: true
+  base-sha:
+    description: Current pull request base SHA.
+    required: true
   mode:
     description: Either request or wait.
     required: false
@@ -34,6 +37,7 @@ runs:
         REPO: ${{ github.repository }}
         PR_NUMBER: ${{ inputs.pr-number }}
         HEAD_SHA: ${{ inputs.head-sha }}
+        BASE_SHA: ${{ inputs.base-sha }}
         CODEX_REVIEW_MODE: ${{ inputs.mode }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}

@@ -33,6 +33,7 @@ jobs:
           token: ${{{{ github.token }}}}
           pr-number: ${{{{ github.event.pull_request.number }}}}
           head-sha: ${{{{ github.event.pull_request.head.sha }}}}
+          base-sha: ${{{{ github.event.pull_request.base.sha }}}}
           mode: request
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
@@ -47,6 +48,7 @@ jobs:
           token: ${{{{ github.token }}}}
           pr-number: ${{{{ github.event.pull_request.number }}}}
           head-sha: ${{{{ github.event.pull_request.head.sha }}}}
+          base-sha: ${{{{ github.event.pull_request.base.sha }}}}
           mode: wait
 """
 
@@ -242,7 +244,7 @@ def test_review_gate_rejects_extra_request_write_permissions(tmp_path: Path) -> 
 def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace("  pull_request:\n", "  pull_request:\n    types: [synchronize]\n", 1)
     _write_repository(tmp_path, workflow)
-    assert any("opened, synchronize, reopened, and ready_for_review" in item.message for item in _findings(tmp_path))
+    assert any("opened, synchronize, reopened, ready_for_review, and edited" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_requires_runner(tmp_path: Path) -> None:
@@ -296,3 +298,22 @@ def test_review_gate_requires_workflow_namespace_ownership(tmp_path: Path) -> No
         encoding="utf-8",
     )
     assert any("entire .github/workflows namespace" in item.message for item in _findings(tmp_path))
+
+
+
+def test_review_gate_requires_base_sha_input(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "          base-sha: ${{ github.event.pull_request.base.sha }}\n", "", 1
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("canonical gate step" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_edited_activity_when_types_are_restricted(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "  pull_request:\n",
+        "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("ready_for_review, and edited" in item.message for item in _findings(tmp_path))

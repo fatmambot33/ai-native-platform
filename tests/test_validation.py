@@ -46,6 +46,7 @@ jobs:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
           mode: request
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
@@ -60,6 +61,7 @@ jobs:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
           mode: wait
 """.replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
 
