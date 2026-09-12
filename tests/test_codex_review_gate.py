@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = ROOT / "actions" / "codex-review-gate" / "action.yml"
@@ -35,7 +35,14 @@ def test_context_requires_a_context_specific_request(tmp_path: Path) -> None:
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_TEST_LOG"
 if [[ "$*" == *'/pulls/42/reviews?per_page=100'* ]]; then
-  printf '%s\\n' '{"user":{"login":"chatgpt-codex-connector[bot]"},"state":"COMMENTED","commit_id":"abc123","submitted_at":"2026-09-12T09:00:00Z"}'
+  cat <<'JSON'
+{
+  "user": {"login": "chatgpt-codex-connector[bot]"},
+  "state": "COMMENTED",
+  "commit_id": "abc123",
+  "submitted_at": "2026-09-12T09:00:00Z"
+}
+JSON
 elif [[ "$*" == *'/issues/42/comments?per_page=100'* ]]; then
   exit 0
 elif [[ "$*" == *'--method POST'* ]]; then
