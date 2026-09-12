@@ -17,6 +17,11 @@ jobs:
         with:
           ref: align/codex-governance
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validation dependencies
+        run: python -m pip install -e .[dev]
       - name: Apply reviewed fixes
         run: |
           sed -i 's/re.subn(pattern, replacement, text, count=1, flags=re.S)/re.subn(pattern, lambda _: replacement, text, count=1, flags=re.S)/' .github/scripts/apply_governance_hardening.py
