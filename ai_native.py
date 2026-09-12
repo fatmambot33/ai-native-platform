@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "cd1f286222a286508c962288671c1f6c97b52d95",
+        "6f365e9bfba6a44bc208e8acd778809fd7eb1c49",
     }
 )
 

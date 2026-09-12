@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_findings
 
-GATE_REF = "cd1f286222a286508c962288671c1f6c97b52d95"
+GATE_REF = "6f365e9bfba6a44bc208e8acd778809fd7eb1c49"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:

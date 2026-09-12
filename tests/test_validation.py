@@ -17,7 +17,7 @@ from ai_native import (
     validate_manifest,
 )
 
-AI_REVIEW_GATE_REF = "cd1f286222a286508c962288671c1f6c97b52d95"
+AI_REVIEW_GATE_REF = "6f365e9bfba6a44bc208e8acd778809fd7eb1c49"
 AI_REVIEW_ACTION = (
     "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 )
