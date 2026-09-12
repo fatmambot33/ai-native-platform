@@ -1,5 +1,5 @@
 name: Codex current-HEAD review gate
-description: Request or require Codex review evidence for a pull-request HEAD.
+description: Request or require current-HEAD Codex review evidence while conserving review quota.
 
 inputs:
   token:
@@ -18,6 +18,10 @@ inputs:
     description: Either request or wait.
     required: false
     default: wait
+  request-label:
+    description: One-shot label authorizing a quota-consuming Codex review request.
+    required: false
+    default: "codex:review"
   timeout-seconds:
     description: Maximum time to wait for Codex.
     required: false
@@ -39,6 +43,7 @@ runs:
         HEAD_SHA: ${{ inputs.head-sha }}
         BASE_SHA: ${{ inputs.base-sha }}
         CODEX_REVIEW_MODE: ${{ inputs.mode }}
+        CODEX_REVIEW_REQUEST_LABEL: ${{ inputs.request-label }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
       run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
