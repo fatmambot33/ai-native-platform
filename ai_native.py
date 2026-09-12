@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "6f365e9bfba6a44bc208e8acd778809fd7eb1c49",
+        "db5cb7440dac086137afc93e32a69a6230556f57",
     }
 )
 
@@ -319,7 +319,7 @@ def _event_runs_on_required_pr_activities(
     workflow: Mapping[Any, Any], event_name: str
 ) -> bool:
     """Return whether a PR event covers every current-HEAD transition."""
-    required = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
+    required = {"opened", "synchronize", "reopened", "ready_for_review", "edited", "labeled"}
     events = _workflow_events_value(workflow)
     if isinstance(events, str):
         return events == event_name
@@ -340,6 +340,22 @@ def _event_runs_on_required_pr_activities(
     return False
 
 
+
+
+def _event_runs_only_on_label(workflow: Mapping[Any, Any], event_name: str) -> bool:
+    """Return whether an event is restricted to label changes only."""
+    events = _workflow_events_value(workflow)
+    if not isinstance(events, Mapping) or event_name not in events:
+        return False
+    config = events[event_name]
+    if not isinstance(config, Mapping):
+        return False
+    types = config.get("types")
+    if isinstance(types, str):
+        return types == "labeled"
+    if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+        return {str(item) for item in types} == {"labeled"}
+    return False
 
 def _event_runs_on_review_dismissal(workflow: Mapping[Any, Any]) -> bool:
     """Return whether pull-request review dismissal re-runs governance."""
@@ -386,6 +402,17 @@ def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
     return condition in {event_only, draft_guard, reverse_guard}
 
 
+
+def _uses_labeled_review_request(job: Mapping[str, Any]) -> bool:
+    """Return whether request execution is bound to the one-shot review label."""
+    condition = _normalize_condition(job.get("if"))
+    event_guard = (
+        "github.event_name == 'pull_request_target' && github.event.action == 'labeled' "
+        "&& github.event.label.name == 'codex:review'"
+    )
+    draft_guard = f"{event_guard} && github.event.pull_request.draft == false"
+    return condition in {event_guard, draft_guard}
+
 def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
     """Return whether the wait job runs on PR updates and review dismissal."""
     condition = _normalize_condition(job.get("if"))
@@ -396,13 +423,13 @@ def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
 
 
 def _positive_integer_input(value: Any) -> bool:
-    """Return whether an action input represents a positive integer."""
+    """Return whether an action input is a Bash-safe positive decimal integer."""
     if isinstance(value, bool):
         return False
     if isinstance(value, int):
         return value > 0
-    if isinstance(value, str) and value.isdigit():
-        return int(value) > 0
+    if isinstance(value, str):
+        return re.fullmatch(r"[1-9][0-9]*", value) is not None
     return False
 
 
@@ -432,6 +459,7 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
         "head-sha": "${{ github.event.pull_request.head.sha }}",
         "base-sha": "${{ github.event.pull_request.base.sha }}",
         "mode": mode,
+        "request-label": "codex:review",
     }
     if any(inputs.get(key) != value for key, value in required_inputs.items()):
         return None
@@ -596,13 +624,17 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     failures: list[str] = []
     events = _workflow_events(workflow)
-    for event_name in ("pull_request", "pull_request_target"):
-        if event_name not in events:
-            failures.append(f"missing {event_name} event")
-        elif not _event_runs_on_required_pr_activities(workflow, event_name):
-            failures.append(
-                f"{event_name} must run on opened, synchronize, reopened, ready_for_review, and edited"
-            )
+    if "pull_request" not in events:
+        failures.append("missing pull_request event")
+    elif not _event_runs_on_required_pr_activities(workflow, "pull_request"):
+        failures.append(
+            "pull_request must run on opened, synchronize, reopened, "
+            "ready_for_review, edited, and labeled"
+        )
+    if "pull_request_target" not in events:
+        failures.append("missing pull_request_target event")
+    elif not _event_runs_only_on_label(workflow, "pull_request_target"):
+        failures.append("pull_request_target must run only on labeled events")
     if "pull_request_review" not in events or not _event_runs_on_review_dismissal(workflow):
         failures.append("pull_request_review must run on dismissed review events")
 
@@ -638,8 +670,12 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         failures.append("codex-review job must not suppress job failures")
     for label, job in (("request", request), ("codex-review", wait)):
         runner = job.get("runs-on")
-        if not isinstance(runner, str) or not runner.strip():
-            failures.append(f"{label} job must declare a nonempty runs-on runner")
+        if runner != "ubuntu-latest":
+            failures.append(f"{label} job must run on canonical ubuntu-latest")
+        if "container" in job:
+            failures.append(f"{label} job must not declare a container")
+        if "strategy" in job:
+            failures.append(f"{label} job must not declare a strategy or matrix")
         if "timeout-minutes" in job:
             failures.append(f"{label} job must not override timeout-minutes")
         if "concurrency" in job:
@@ -647,8 +683,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     if wait.get("name") not in (None, "codex-review"):
         failures.append("codex-review job name must remain codex-review")
 
-    if not _uses_event(request, "pull_request_target"):
-        failures.append("request job condition must canonically bind pull_request_target")
+    if not _uses_labeled_review_request(request):
+        failures.append(
+            "request job condition must bind only codex:review labeled events"
+        )
     if not _uses_review_wait_events(wait):
         failures.append(
             "codex-review job condition must canonically bind pull_request and pull_request_review"
@@ -656,24 +694,27 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     request_permissions = _job_permissions(request)
     expected_request_permissions = {
+        "actions": "read",
         "contents": "read",
         "issues": "write",
         "pull-requests": "read",
     }
     if dict(request_permissions) != expected_request_permissions:
         failures.append(
-            "request job permissions must be exactly contents: read, issues: write, "
-            "and pull-requests: read"
+            "request job permissions must be exactly actions/contents: read, "
+            "issues: write, and pull-requests: read"
         )
     wait_permissions = _job_permissions(wait)
     expected_wait_permissions = {
+        "actions": "read",
         "contents": "read",
         "issues": "read",
         "pull-requests": "read",
     }
     if dict(wait_permissions) != expected_wait_permissions:
         failures.append(
-            "codex-review job permissions must be exactly contents/issues/pull-requests: read"
+            "codex-review job permissions must be exactly "
+            "actions/contents/issues/pull-requests: read"
         )
 
     concurrency = workflow.get("concurrency", {})

@@ -6,12 +6,14 @@ from pathlib import Path
 
 from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_findings
 
-GATE_REF = "6f365e9bfba6a44bc208e8acd778809fd7eb1c49"
+GATE_REF = "db5cb7440dac086137afc93e32a69a6230556f57"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]
   pull_request_target:
+    types: [labeled]
   pull_request_review:
     types: [dismissed]
 permissions:
@@ -21,9 +23,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   request:
-    if: github.event_name == 'pull_request_target'
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'codex:review'
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       issues: write
       pull-requests: read
@@ -35,10 +41,12 @@ jobs:
           head-sha: ${{{{ github.event.pull_request.head.sha }}}}
           base-sha: ${{{{ github.event.pull_request.base.sha }}}}
           mode: request
+          request-label: codex:review
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       issues: read
       pull-requests: read
@@ -50,6 +58,7 @@ jobs:
           head-sha: ${{{{ github.event.pull_request.head.sha }}}}
           base-sha: ${{{{ github.event.pull_request.base.sha }}}}
           mode: wait
+          request-label: codex:review
 """
 
 
@@ -242,12 +251,13 @@ def test_review_gate_rejects_extra_request_write_permissions(tmp_path: Path) -> 
 
 def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
-        "  pull_request:\n", "  pull_request:\n    types: [synchronize]\n", 1
+        "    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]\n",
+        "    types: [synchronize, labeled]\n",
+        1,
     )
     _write_repository(tmp_path, workflow)
     assert any(
-        "opened, synchronize, reopened, ready_for_review, and edited" in item.message
-        for item in _findings(tmp_path)
+        "opened, synchronize, reopened" in item.message for item in _findings(tmp_path)
     )
 
 
@@ -255,7 +265,7 @@ def test_review_gate_requires_runner(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "", 1)
     _write_repository(tmp_path, workflow)
     assert any(
-        "must declare a nonempty runs-on runner" in item.message for item in _findings(tmp_path)
+        "canonical ubuntu-latest" in item.message for item in _findings(tmp_path)
     )
 
 
@@ -324,9 +334,72 @@ def test_review_gate_requires_base_sha_input(tmp_path: Path) -> None:
 
 def test_review_gate_requires_edited_activity_when_types_are_restricted(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
-        "  pull_request:\n",
-        "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n",
+        "    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]\n",
+        "    types: [opened, synchronize, reopened, ready_for_review, labeled]\n",
         1,
     )
     _write_repository(tmp_path, workflow)
-    assert any("ready_for_review, and edited" in item.message for item in _findings(tmp_path))
+    assert any("edited, and labeled" in item.message for item in _findings(tmp_path))
+
+def test_review_gate_restricts_target_to_review_label(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "  pull_request_target:\n    types: [labeled]\n",
+        "  pull_request_target:\n    types: [labeled, synchronize]\n",
+    )
+    _write_repository(tmp_path, workflow)
+    assert any(
+        "pull_request_target must run only on labeled" in item.message
+        for item in _findings(tmp_path)
+    )
+
+
+def test_review_gate_requires_explicit_review_label_condition(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "      github.event.label.name == 'codex:review'\n",
+        "      github.event.label.name == 'other'\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("codex:review labeled events" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_actions_read(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("      actions: read\n", "", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("permissions must be exactly" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_container(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "    runs-on: ubuntu-latest\n",
+        "    runs-on: ubuntu-latest\n    container: attacker/image:latest\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("must not declare a container" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_matrix_strategy(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "    runs-on: ubuntu-latest\n",
+        "    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        python: ['3.12']\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("must not declare a strategy" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_canonical_runner(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("runs-on: ubuntu-latest", "runs-on: self-hosted", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("canonical ubuntu-latest" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_bash_unsafe_timing_strings(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "          mode: wait\n          request-label: codex:review\n",
+        "          mode: wait\n          request-label: codex:review\n"
+        "          timeout-seconds: '08'\n",
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("positive timing overrides" in item.message for item in _findings(tmp_path))

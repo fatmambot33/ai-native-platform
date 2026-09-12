@@ -103,3 +103,29 @@ Codex must be configured for the repository in ChatGPT Codex Cloud. If the repos
 ## Auto-merge
 
 Auto-merge is compatible with this model and is recommended once the ruleset is active. GitHub may merge automatically only after normal CI, the current-HEAD `codex-review` job, review-thread resolution, and any required fresh code-owner approval are all green.
+
+## Quota-aware review lifecycle
+
+Codex review is asynchronous and quota-limited. Deterministic CI, linting,
+tests, conformance, and security checks run during normal iteration. New
+commits invalidate stale Codex evidence but do not automatically spend another
+review.
+
+For repositories opting into AI-review governance, branch protection MUST
+require the pull request branch to be up to date with its protected base before
+merge (GitHub strict required-status-check policy or an equivalent rule). This
+prevents a clean review for an older base revision from remaining mergeable
+after the base advances. The reference repository enforces this rule.
+
+When the exact current HEAD/base pair is green and merge-ready, apply the
+one-shot `codex:review` label. The privileged `pull_request_target` path runs
+only for that label. Both request and wait jobs require `actions: read` so
+server-verified workflow-run provenance also works in private repositories.
+The request is deduplicated while pending, but a dismissed matching review may
+be deliberately replaced by applying the label again.
+
+If Codex reports code-review quota exhaustion or a terminal request failure,
+the gate fails closed and never retries automatically. Re-apply the label only
+after capacity returns or the failure is understood. The merge invariant is
+unchanged: exact current HEAD/base Codex evidence and zero unresolved
+Codex-authored review threads.

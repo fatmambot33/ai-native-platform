@@ -84,3 +84,23 @@ def test_matching_review_must_follow_current_head_base_request() -> None:
     assert ".submitted_at" in review
     assert "$since" in review
     assert "${HEAD_SHA}:${BASE_SHA}" in script
+
+def test_explicit_label_can_replace_a_dismissed_review() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    request = _function_body(script, "request_review")
+    dismissed = _function_body(script, "has_dismissed_matching_review")
+
+    assert "DISMISSED" in dismissed
+    assert "has_dismissed_matching_review" in request
+    assert "authorizes one replacement review" in request
+
+
+def test_review_requests_are_quota_aware() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    request = _function_body(script, "request_review")
+    failure = _function_body(script, "codex_failure_after")
+
+    assert 'REQUEST_LABEL="${CODEX_REVIEW_REQUEST_LABEL:-codex:review}"' in script
+    assert "still pending; preserving quota" in request
+    assert "reached your Codex usage limits for code reviews" in failure
+    assert "No automatic retry will be attempted" in failure

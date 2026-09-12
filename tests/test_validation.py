@@ -17,14 +17,16 @@ from ai_native import (
     validate_manifest,
 )
 
-AI_REVIEW_GATE_REF = "6f365e9bfba6a44bc208e8acd778809fd7eb1c49"
+AI_REVIEW_GATE_REF = "db5cb7440dac086137afc93e32a69a6230556f57"
 AI_REVIEW_ACTION = (
     "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 )
 AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]
   pull_request_target:
+    types: [labeled]
   pull_request_review:
     types: [dismissed]
 permissions:
@@ -34,9 +36,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   request:
-    if: github.event_name == 'pull_request_target'
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'codex:review'
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       issues: write
       pull-requests: read
@@ -48,10 +54,12 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
           base-sha: ${{ github.event.pull_request.base.sha }}
           mode: request
+          request-label: codex:review
   codex-review:
     if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       issues: read
       pull-requests: read
@@ -63,6 +71,7 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
           base-sha: ${{ github.event.pull_request.base.sha }}
           mode: wait
+          request-label: codex:review
 """.replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
 
 
@@ -457,7 +466,11 @@ def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
 def test_ai_review_workflow_requires_synchronize_event(tmp_path: Path) -> None:
     findings = _validate_ai_review_text(
         tmp_path,
-        AI_REVIEW_WORKFLOW.replace("  pull_request:\n", "  pull_request:\n    types: [opened]\n"),
+        AI_REVIEW_WORKFLOW.replace(
+            "    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]\n",
+            "    types: [opened]\n",
+            1,
+        ),
     )
 
     assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)

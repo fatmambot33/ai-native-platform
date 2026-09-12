@@ -83,5 +83,4 @@ release_gates:
   - documentation_current
   - changelog_current
   - migration_notes_for_breaking_changes
-  - ai_review_current_head
-  - review_threads_resolved
+  - branch_up_to_date
