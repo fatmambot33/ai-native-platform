@@ -60,8 +60,7 @@ def _write_repository(root: Path, workflow: str = WORKFLOW, *, codeowners: bool 
     if codeowners:
         owners = root / ".github" / "CODEOWNERS"
         owners.write_text(
-            "/.github/workflows/** @repository-owner\n"
-            "/.github/CODEOWNERS @repository-owner\n",
+            "/.github/workflows/** @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
             encoding="utf-8",
         )
 
@@ -101,13 +100,16 @@ def test_review_gate_rejects_job_level_continue_on_error(tmp_path: Path) -> None
 
 
 def test_review_gate_rejects_additional_jobs(tmp_path: Path) -> None:
-    workflow = WORKFLOW + """  extra-target-job:
+    workflow = (
+        WORKFLOW
+        + """  extra-target-job:
     if: github.event_name == 'pull_request_target'
     permissions:
       contents: write
     steps:
       - run: echo unsafe
 """
+    )
     _write_repository(tmp_path, workflow)
 
     findings = _findings(tmp_path)
@@ -157,7 +159,7 @@ def test_review_gate_requires_evaluated_concurrency_pr_expression(tmp_path: Path
 def test_review_gate_rejects_invalid_optional_timing_inputs(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
         "          mode: wait\n",
-        "          mode: wait\n          timeout-seconds: \"0\"\n          poll-seconds: nope\n",
+        '          mode: wait\n          timeout-seconds: "0"\n          poll-seconds: nope\n',
     )
     _write_repository(tmp_path, workflow)
 
@@ -206,67 +208,79 @@ def test_codeowners_root_anchor_does_not_match_nested_basename(tmp_path: Path) -
     _write_repository(tmp_path)
     codeowners = tmp_path / ".github" / "CODEOWNERS"
     codeowners.write_text(
-        "/codex-review.yml @repository-owner\n"
-        "/.github/CODEOWNERS @repository-owner\n",
+        "/codex-review.yml @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
         encoding="utf-8",
     )
 
-    assert _codeowners_effective_owners(
-        tmp_path, Path(".github/workflows/codex-review.yml")
-    ) is None
-    findings = _findings(tmp_path)
-    assert any(
-        "must be covered by .github/CODEOWNERS" in item.message for item in findings
+    assert (
+        _codeowners_effective_owners(tmp_path, Path(".github/workflows/codex-review.yml")) is None
     )
+    findings = _findings(tmp_path)
+    assert any("must be covered by .github/CODEOWNERS" in item.message for item in findings)
 
 
 def test_codeowners_ignores_commented_rules(tmp_path: Path) -> None:
     _write_repository(tmp_path)
     codeowners = tmp_path / ".github" / "CODEOWNERS"
     codeowners.write_text(
-        "# /.github/workflows/** @repository-owner\n"
-        "/.github/CODEOWNERS @repository-owner\n",
+        "# /.github/workflows/** @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
         encoding="utf-8",
     )
 
-    assert _codeowners_effective_owners(
-        tmp_path, Path(".github/workflows/codex-review.yml")
-    ) is None
-
+    assert (
+        _codeowners_effective_owners(tmp_path, Path(".github/workflows/codex-review.yml")) is None
+    )
 
 
 def test_review_gate_rejects_extra_request_write_permissions(tmp_path: Path) -> None:
-    workflow = WORKFLOW.replace("      contents: read\n      issues: write", "      contents: write\n      issues: write")
+    workflow = WORKFLOW.replace(
+        "      contents: read\n      issues: write", "      contents: write\n      issues: write"
+    )
     _write_repository(tmp_path, workflow)
     assert any("permissions must be exactly" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
-    workflow = WORKFLOW.replace("  pull_request:\n", "  pull_request:\n    types: [synchronize]\n", 1)
+    workflow = WORKFLOW.replace(
+        "  pull_request:\n", "  pull_request:\n    types: [synchronize]\n", 1
+    )
     _write_repository(tmp_path, workflow)
-    assert any("opened, synchronize, reopened, ready_for_review, and edited" in item.message for item in _findings(tmp_path))
+    assert any(
+        "opened, synchronize, reopened, ready_for_review, and edited" in item.message
+        for item in _findings(tmp_path)
+    )
 
 
 def test_review_gate_requires_runner(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "", 1)
     _write_repository(tmp_path, workflow)
-    assert any("must declare a nonempty runs-on runner" in item.message for item in _findings(tmp_path))
+    assert any(
+        "must declare a nonempty runs-on runner" in item.message for item in _findings(tmp_path)
+    )
 
 
 def test_review_gate_rejects_job_concurrency_override(tmp_path: Path) -> None:
-    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    concurrency: global\n", 1)
+    workflow = WORKFLOW.replace(
+        "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    concurrency: global\n", 1
+    )
     _write_repository(tmp_path, workflow)
-    assert any("must not override workflow concurrency" in item.message for item in _findings(tmp_path))
+    assert any(
+        "must not override workflow concurrency" in item.message for item in _findings(tmp_path)
+    )
 
 
 def test_review_gate_rejects_job_timeout_override(tmp_path: Path) -> None:
-    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    timeout-minutes: 1\n", 1)
+    workflow = WORKFLOW.replace(
+        "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    timeout-minutes: 1\n", 1
+    )
     _write_repository(tmp_path, workflow)
     assert any("must not override timeout-minutes" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_preserves_required_check_name(tmp_path: Path) -> None:
-    workflow = WORKFLOW.replace("  codex-review:\n", "  codex-review:\n    name: Not the required check\n", 1)
+    workflow = WORKFLOW.replace(
+        "  codex-review:\n", "  codex-review:\n    name: Not the required check\n", 1
+    )
     _write_repository(tmp_path, workflow)
     assert any("job name must remain codex-review" in item.message for item in _findings(tmp_path))
 
@@ -298,7 +312,6 @@ def test_review_gate_requires_workflow_namespace_ownership(tmp_path: Path) -> No
         encoding="utf-8",
     )
     assert any("entire .github/workflows namespace" in item.message for item in _findings(tmp_path))
-
 
 
 def test_review_gate_requires_base_sha_input(tmp_path: Path) -> None:
