@@ -8,10 +8,13 @@ set -euo pipefail
 : "${BASE_SHA:?BASE_SHA is required}"
 : "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
 : "${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}"
+: "${GITHUB_EVENT_NAME:?GITHUB_EVENT_NAME is required}"
+: "${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH is required}"
 
 MODE="${CODEX_REVIEW_MODE:-wait}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
+REQUEST_LABEL="${CODEX_REVIEW_REQUEST_LABEL:-codex:review}"
 SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA}:${BASE_SHA} -->"
 RUN_MARKER="<!-- ai-native-codex-review-run:${GITHUB_RUN_ID} -->"
@@ -21,6 +24,8 @@ OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
 WORKFLOW_PATH="${GITHUB_WORKFLOW_REF#${REPO}/}"
 WORKFLOW_PATH="${WORKFLOW_PATH%@*}"
+EVENT_ACTION="$(jq -r '.action // empty' "$GITHUB_EVENT_PATH")"
+EVENT_LABEL="$(jq -r '.label.name // empty' "$GITHUB_EVENT_PATH")"
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -30,6 +35,28 @@ api_list() {
     -H "Accept: application/vnd.github+json" \
     "$endpoint" \
     --jq '.[]' | jq -s '.'
+}
+
+is_request_label_event() {
+  [[ "$GITHUB_EVENT_NAME" == "pull_request_target" \
+    && "$EVENT_ACTION" == "labeled" \
+    && "$EVENT_LABEL" == "$REQUEST_LABEL" ]]
+}
+
+is_wait_label_event() {
+  [[ "$GITHUB_EVENT_NAME" == "pull_request" \
+    && "$EVENT_ACTION" == "labeled" \
+    && "$EVENT_LABEL" == "$REQUEST_LABEL" ]]
+}
+
+clear_request_label() {
+  local encoded_label
+  encoded_label="$(jq -rn --arg value "$REQUEST_LABEL" '$value | @uri')"
+  if ! gh api --method DELETE \
+    "repos/${REPO}/issues/${PR_NUMBER}/labels/${encoded_label}" >/dev/null 2>&1; then
+    echo "::warning::Unable to clear one-shot Codex review label ${REQUEST_LABEL}."
+  fi
+  return 0
 }
 
 has_matching_review() {
@@ -126,6 +153,18 @@ current_workflow_id() {
   }
 }
 
+current_run_created_at() {
+  local run
+  if ! run="$(gh api "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}")"; then
+    echo "::error::Unable to load the current governance workflow run."
+    return 2
+  fi
+  jq -er '.created_at' <<<"$run" || {
+    echo "::error::Current governance run is missing its server timestamp."
+    return 2
+  }
+}
+
 trusted_request_run() {
   local run_id="$1"
   local comment_created_at="$2"
@@ -155,6 +194,7 @@ trusted_request_run() {
 find_bot_trigger_comment() {
   local comments row id created_at run_id status
   COMMENT_ID=""
+  COMMENT_CREATED_AT=""
   if ! comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"; then
     echo "::error::Unable to query Codex review-request comments."
     return 2
@@ -224,6 +264,40 @@ find_trigger_comment() {
   fi
 }
 
+codex_failure_after() {
+  local since="$1"
+  local comments body
+  if ! comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"; then
+    echo "::error::Unable to inspect Codex review-request failures."
+    return 2
+  fi
+  body="$(
+    jq -r \
+      --arg since "$since" \
+      '[
+        .[]
+        | select(
+            (.user.login // "") == "chatgpt-codex-connector"
+            or (.user.login // "") == "chatgpt-codex-connector[bot]"
+          )
+        | select((.created_at // "") >= $since)
+        | select(
+            ((.body // "") | contains("reached your Codex usage limits for code reviews"))
+            or ((.body // "") | startswith("Codex Review: Something went wrong"))
+          )
+        | .body
+      ] | first // empty' \
+      <<<"$comments"
+  )"
+  [[ -n "$body" ]] || return 1
+  if [[ "$body" == *"usage limits for code reviews"* ]]; then
+    echo "::error::Codex code-review quota is unavailable. No automatic retry will be attempted."
+  else
+    echo "::error::Codex reported a terminal review-request failure. No automatic retry will be attempted."
+  fi
+  return 0
+}
+
 has_trigger_clean_reaction() {
   [[ -n "$COMMENT_ID" ]] || find_trigger_comment
   [[ -n "$COMMENT_ID" ]] || return 1
@@ -254,22 +328,39 @@ has_clear_codex_evidence() {
 request_review() {
   find_bot_trigger_comment
   if [[ -n "$COMMENT_ID" ]]; then
-    echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
-    return 0
+    if codex_failure_after "$COMMENT_CREATED_AT" >/dev/null; then
+      echo "Prior Codex request failed; this explicit ${REQUEST_LABEL} event authorizes one retry."
+    else
+      local failure_status=$?
+      if [[ "$failure_status" -eq 1 ]]; then
+        echo "A Codex review request for current HEAD ${SHORT_SHA} is still pending; preserving quota."
+        return 0
+      fi
+      return 2
+    fi
   fi
+
   local body response
-  body="$(printf '@codex review\n\nAutomated AI Native Platform merge gate for `%s`.\n%s\n%s\n' "$SHORT_SHA" "$MARKER" "$RUN_MARKER")"
+  body="$(
+    printf '@codex review\n\nQuota-aware merge-ready AI Native Platform gate for `%s`.\n%s\n%s\n' \
+      "$SHORT_SHA" "$MARKER" "$RUN_MARKER"
+  )"
   response="$(
     gh api --method POST \
       "repos/${REPO}/issues/${PR_NUMBER}/comments" \
       -f body="$body"
   )"
   COMMENT_ID="$(jq -r '.id' <<<"$response")"
-  echo "Requested Codex review for current HEAD ${SHORT_SHA}."
+  echo "Requested one Codex review for merge-ready HEAD ${SHORT_SHA}."
 }
 
 case "$MODE" in
   request)
+    if ! is_request_label_event; then
+      echo "Codex review request skipped. Apply ${REQUEST_LABEL} only when the PR is merge-ready."
+      exit 0
+    fi
+    trap clear_request_label EXIT
     if has_matching_review; then
       echo "Codex already reviewed current HEAD ${SHORT_SHA}."
       exit 0
@@ -285,15 +376,36 @@ case "$MODE" in
     ;;
 esac
 
-echo "Waiting for clean Codex evidence for current HEAD ${SHORT_SHA}."
+if has_clear_codex_evidence; then
+  echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
+  exit 0
+fi
+
+if ! is_wait_label_event; then
+  echo "::error::Current HEAD ${SHORT_SHA} has no clean Codex review."
+  echo "::error::Run deterministic CI and batch fixes, then apply ${REQUEST_LABEL} once merge-ready."
+  exit 1
+fi
+
+request_started_at="$(current_run_created_at)" || exit 2
+echo "Waiting for one merge-ready Codex review of current HEAD ${SHORT_SHA}."
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while (( SECONDS < deadline )); do
   if has_clear_codex_evidence; then
     echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
     exit 0
   fi
+  if codex_failure_after "$request_started_at"; then
+    exit 1
+  else
+    failure_status=$?
+    if [[ "$failure_status" -eq 2 ]]; then
+      exit 2
+    fi
+  fi
   sleep "$POLL_SECONDS"
 done
 
-echo "::error::Codex has not completed a clean, fully resolved review of current HEAD ${SHORT_SHA}."
+echo "::error::Codex has not completed a clean review of current HEAD ${SHORT_SHA}."
+echo "::error::Re-apply ${REQUEST_LABEL} only after confirming the earlier request completed or failed."
 exit 1
