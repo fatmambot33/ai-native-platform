@@ -1,0 +1,406 @@
+name: Apply governance hardening
+
+on:
+  push:
+    branches: [align/codex-governance]
+    paths:
+      - .github/workflows/apply-governance-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: align/codex-governance
+          fetch-depth: 0
+      - name: Apply review hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"missing replacement target: {label}")
+              return text.replace(old, new, 1)
+
+          path = Path("ai_native.py")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''def _event_runs_on_synchronize(workflow: Mapping[Any, Any], event_name: str) -> bool:
+              """Return whether an event is unrestricted or explicitly includes synchronize."""
+              events = _workflow_events_value(workflow)
+              if isinstance(events, str):
+                  return events == event_name
+              if isinstance(events, Sequence) and not isinstance(events, (str, bytes, Mapping)):
+                  return event_name in {str(item) for item in events}
+              if not isinstance(events, Mapping) or event_name not in events:
+                  return False
+              config = events[event_name]
+              if config is None:
+                  return True
+              if not isinstance(config, Mapping):
+                  return False
+              types = config.get("types")
+              if types is None:
+                  return True
+              if isinstance(types, str):
+                  return types == "synchronize"
+              if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+                  return "synchronize" in types
+              return False
+          '''
+          new = '''def _event_runs_on_required_pr_activities(
+              workflow: Mapping[Any, Any], event_name: str
+          ) -> bool:
+              """Return whether a PR event covers every current-HEAD transition."""
+              required = {"opened", "synchronize", "reopened", "ready_for_review"}
+              events = _workflow_events_value(workflow)
+              if isinstance(events, str):
+                  return events == event_name
+              if isinstance(events, Sequence) and not isinstance(events, (str, bytes, Mapping)):
+                  return event_name in {str(item) for item in events}
+              if not isinstance(events, Mapping) or event_name not in events:
+                  return False
+              config = events[event_name]
+              if config is None:
+                  return True
+              if not isinstance(config, Mapping):
+                  return False
+              types = config.get("types")
+              if types is None:
+                  return True
+              if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
+                  return required <= {str(item) for item in types}
+              return False
+          '''
+          text = replace_once(text, old, new, "PR event coverage helper")
+
+          old = '''def _codeowners_covers_path(root: Path, relative: Path) -> bool:
+              """Return whether the effective CODEOWNERS rule assigns valid owners."""
+              effective_owners = _codeowners_effective_owners(root, relative)
+              return bool(effective_owners) and all(
+                  owner.startswith("@") for owner in effective_owners
+              )
+          '''
+          new = '''def _valid_codeowner(owner: str) -> bool:
+              """Return whether a CODEOWNERS owner token has a supported identity shape."""
+              handle = re.fullmatch(
+                  r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?",
+                  owner,
+              )
+              email = re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", owner)
+              return handle is not None or email is not None
+
+
+          def _codeowners_covers_path(root: Path, relative: Path) -> bool:
+              """Return whether the effective CODEOWNERS rule assigns valid owners."""
+              effective_owners = _codeowners_effective_owners(root, relative)
+              return bool(effective_owners) and all(
+                  _valid_codeowner(owner) for owner in effective_owners
+              )
+          '''
+          text = replace_once(text, old, new, "CODEOWNERS identity validation")
+
+          text = replace_once(
+              text,
+              'or len(relative.parts) < 3\n',
+              'or len(relative.parts) != 3\n',
+              "top-level workflow evidence",
+          )
+          text = replace_once(
+              text,
+              'elif not _event_runs_on_synchronize(workflow, event_name):\n            failures.append(f"{event_name} must run on synchronize")',
+              'elif not _event_runs_on_required_pr_activities(workflow, event_name):\n            failures.append(\n                f"{event_name} must run on opened, synchronize, reopened, and ready_for_review"\n            )',
+              "required PR activity validation",
+          )
+
+          old = '''    if request.get("continue-on-error") not in (None, False):
+              failures.append("request job must not suppress job failures")
+          if wait.get("continue-on-error") not in (None, False):
+              failures.append("codex-review job must not suppress job failures")
+
+              if not _uses_event(request, "pull_request_target"):
+          '''
+          new = '''    if request.get("continue-on-error") not in (None, False):
+              failures.append("request job must not suppress job failures")
+          if wait.get("continue-on-error") not in (None, False):
+              failures.append("codex-review job must not suppress job failures")
+          for label, job in (("request", request), ("codex-review", wait)):
+              runner = job.get("runs-on")
+              if not isinstance(runner, str) or not runner.strip():
+                  failures.append(f"{label} job must declare a nonempty runs-on runner")
+              if "timeout-minutes" in job:
+                  failures.append(f"{label} job must not override timeout-minutes")
+              if "concurrency" in job:
+                  failures.append(f"{label} job must not override workflow concurrency")
+          if wait.get("name") not in (None, "codex-review"):
+              failures.append("codex-review job name must remain codex-review")
+
+              if not _uses_event(request, "pull_request_target"):
+          '''
+          text = replace_once(text, old, new, "job execution constraints")
+
+          old = '''    request_permissions = _job_permissions(request)
+              if request_permissions.get("issues") != "write":
+                  failures.append("request job must grant issues: write")
+              if request_permissions.get("pull-requests") != "read":
+                  failures.append("request job must grant pull-requests: read")
+              wait_permissions = _job_permissions(wait)
+              if wait_permissions.get("issues") != "read":
+                  failures.append("codex-review job must grant issues: read")
+              if wait_permissions.get("pull-requests") != "read":
+                  failures.append("codex-review job must grant pull-requests: read")
+              if any(str(permission).lower() == "write" for permission in wait_permissions.values()):
+                  failures.append("codex-review job must remain read-only")
+          '''
+          new = '''    request_permissions = _job_permissions(request)
+              expected_request_permissions = {
+                  "contents": "read",
+                  "issues": "write",
+                  "pull-requests": "read",
+              }
+              if dict(request_permissions) != expected_request_permissions:
+                  failures.append(
+                      "request job permissions must be exactly contents: read, issues: write, "
+                      "and pull-requests: read"
+                  )
+              wait_permissions = _job_permissions(wait)
+              expected_wait_permissions = {
+                  "contents": "read",
+                  "issues": "read",
+                  "pull-requests": "read",
+              }
+              if dict(wait_permissions) != expected_wait_permissions:
+                  failures.append(
+                      "codex-review job permissions must be exactly contents/issues/pull-requests: read"
+                  )
+          '''
+          text = replace_once(text, old, new, "least-privilege permissions")
+
+          old = '''    if not _codeowners_covers_path(root, relative):
+              failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
+          if not _codeowners_covers_path(root, Path(".github/CODEOWNERS")):
+              failures.append(".github/CODEOWNERS must protect itself with an effective owner rule")
+          '''
+          new = '''    if not _codeowners_covers_path(root, relative):
+              failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
+          if not _codeowners_covers_path(
+              root, Path(".github/workflows/__ai_native_required_check_probe__.yml")
+          ):
+              failures.append("the entire .github/workflows namespace must be CODEOWNERS-protected")
+          if not _codeowners_covers_path(root, Path(".github/CODEOWNERS")):
+              failures.append(".github/CODEOWNERS must protect itself with an effective owner rule")
+          '''
+          text = replace_once(text, old, new, "workflow namespace ownership")
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("validator/validate_standard.py")
+          text = path.read_text(encoding="utf-8")
+          text = replace_once(
+              text,
+              '        "actions/codex-review-gate/action.yml",\n',
+              '        "actions/codex-review-gate/action.yml",\n        "actions/codex-review-gate/codex-review-gate.sh",\n        ".github/workflows/__ai_native_required_check_probe__.yml",\n',
+              "canonical governed paths",
+          )
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("templates/AI_NATIVE_PLATFORM.yaml")
+          text = path.read_text(encoding="utf-8").replace(
+              "# AI review governance is unreleased and intentionally omitted from the v0.2 starter.",
+              "# AI review governance is opt-in and intentionally omitted from the v0.3 starter.",
+          )
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("CHANGELOG.md")
+          text = path.read_text(encoding="utf-8")
+          text = replace_once(
+              text,
+              "## Unreleased\n",
+              """## Unreleased
+
+### Added
+
+- Add opt-in `evidence.paths.ai_review_workflow` governance evidence with structural validation of trusted current-HEAD Codex review workflows.
+- Add a reusable Codex review gate that binds automated clean-reaction requests to the exact PR HEAD through server-verified GitHub Actions request-run provenance.
+
+### Security
+
+- Require request jobs to use least-privilege permissions, keep wait jobs read-only, preserve the `codex-review` check name, and reject job-level concurrency/timeouts that can bypass or destabilize the gate.
+- Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation.
+- Keep one-time bootstrap evidence limited to unedited OWNER/MEMBER/COLLABORATOR requests for repositories that have not yet landed the protected request workflow.
+
+### Migration
+
+- Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
+
+""",
+              "changelog governance notes",
+          )
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("RELEASE_NOTES.md")
+          text = path.read_text(encoding="utf-8")
+          addition = """
+
+## AI-review governance opt-in
+
+Repositories may opt into `evidence.paths.ai_review_workflow` to make current-HEAD Codex review part of merge governance. The declared workflow must pin the reusable gate to an immutable trusted framework commit, use a protected `pull_request_target` request path plus a read-only `pull_request`/review-dismissal wait path, and preserve the required `codex-review` check name.
+
+Adoption is a one-time bootstrap: land the governed workflow and CODEOWNERS rules, then require `codex-review`, enable **Require review from Code Owners**, enable dismissal of stale approvals on new pushes (or equivalent latest-push approval protection), and keep conversation resolution required. Automated clean-reaction requests are bound to server-verified GitHub Actions run provenance for the exact PR and HEAD; the privileged maintainer bootstrap fallback exists only before the trusted request workflow is present on the default branch.
+"""
+          if "## AI-review governance opt-in" not in text:
+              text += addition
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("docs/AI_REVIEW_GOVERNANCE.md")
+          text = path.read_text(encoding="utf-8")
+          old = '''A clean reaction normally comes from the HEAD-specific request created by the trusted request job. The request must remain unedited (`created_at == updated_at`), must contain the full current-HEAD marker, and must have been created no earlier than the server-supplied activation timestamp for that exact PR HEAD.
+
+          The one-time bootstrap path also accepts an unedited request from an `OWNER`, `MEMBER`, or `COLLABORATOR` when the new trusted `pull_request_target` workflow is not yet present on the default branch. The first line must be the exact `@codex review` command, the comment must contain the full current-HEAD marker, and its creation time must be at or after the current HEAD activation timestamp. Request mode never creates or relies on this maintainer fallback; it exists only so the bootstrap wait path can validate genuine Codex clean-reaction evidence without rebinding an older reaction.
+          '''
+          new = '''A clean reaction normally comes from the HEAD-specific request created by the trusted request job. The request must remain unedited (`created_at == updated_at`), contain the full current-HEAD marker, and carry the request workflow run ID. The wait gate verifies that run through GitHub's server API: it must be the same workflow ID and workflow path, must have been triggered by `pull_request_target`, and GitHub must associate it with the exact pull request number and HEAD SHA before the request reaction is trusted. This avoids using mutable pull-request timestamps or contributor-controlled commit dates as freshness evidence.
+
+          The one-time bootstrap path also accepts an unedited request from an `OWNER`, `MEMBER`, or `COLLABORATOR` when the new trusted `pull_request_target` workflow is not yet present on the default branch. The first line must be the exact `@codex review` command and the comment must contain the full current-HEAD marker. This is an explicitly privileged bootstrap exception rather than automated run provenance; request mode never creates or relies on it.
+          '''
+          text = replace_once(text, old, new, "governance provenance docs")
+          text = text.replace(
+              "positive numeric timing overrides when supplied, no writable status/check API, and effective CODEOWNERS protection for both the workflow and `.github/CODEOWNERS` itself.",
+              "positive numeric timing overrides when supplied, no job-level timeout/concurrency overrides, exact least-privilege permissions, executable runners, a stable `codex-review` check name, no writable status/check API, and effective CODEOWNERS protection for the full workflow namespace plus `.github/CODEOWNERS` itself.",
+          )
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("tests/test_ai_review_governance_hardening.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "  request:\n    if: github.event_name == 'pull_request_target'\n",
+              "  request:\n    if: github.event_name == 'pull_request_target'\n    runs-on: ubuntu-latest\n",
+              1,
+          )
+          text = text.replace(
+              "  codex-review:\n    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')\n",
+              "  codex-review:\n    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')\n    runs-on: ubuntu-latest\n",
+              1,
+          )
+          addition = r'''
+
+
+def test_review_gate_rejects_extra_request_write_permissions(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("      contents: read\n      issues: write", "      contents: write\n      issues: write")
+    _write_repository(tmp_path, workflow)
+    assert any("permissions must be exactly" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_all_pr_head_activities(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("  pull_request:\n", "  pull_request:\n    types: [synchronize]\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("opened, synchronize, reopened, and ready_for_review" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_runner(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must declare a nonempty runs-on runner" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_concurrency_override(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    concurrency: global\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must not override workflow concurrency" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_timeout_override(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    timeout-minutes: 1\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("must not override timeout-minutes" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_preserves_required_check_name(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("  codex-review:\n", "  codex-review:\n    name: Not the required check\n", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("job name must remain codex-review" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_top_level_workflow_file(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    nested = tmp_path / ".github" / "workflows" / "archive" / "codex-review.yml"
+    nested.parent.mkdir(parents=True)
+    nested.write_text(WORKFLOW, encoding="utf-8")
+    findings = _single_ai_review_workflow_findings(
+        ".github/workflows/archive/codex-review.yml", tmp_path
+    )
+    assert any("must point to a .github/workflows YAML file" in item.message for item in findings)
+
+
+def test_review_gate_rejects_invalid_codeowner_identity(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    owners = tmp_path / ".github" / "CODEOWNERS"
+    owners.write_text("/.github/workflows/** @\n/.github/CODEOWNERS @\n", encoding="utf-8")
+    assert any("CODEOWNERS" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_workflow_namespace_ownership(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    owners = tmp_path / ".github" / "CODEOWNERS"
+    owners.write_text(
+        "/.github/workflows/codex-review.yml @repository-owner\n"
+        "/.github/CODEOWNERS @repository-owner\n",
+        encoding="utf-8",
+    )
+    assert any("entire .github/workflows namespace" in item.message for item in _findings(tmp_path))
+'''
+          if "test_review_gate_rejects_extra_request_write_permissions" not in text:
+              text += addition
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("tests/test_codex_review_gate.py")
+          text = path.read_text(encoding="utf-8")
+          pattern = re.compile(
+              r"def test_clean_reaction_request_must_postdate_current_head_activation\(\) -> None:\n.*?(?=\ndef test_thread_pagination_errors_fail_closed)",
+              re.S,
+          )
+          replacement = '''def test_clean_reaction_request_uses_trusted_run_provenance() -> None:
+              script = GATE.read_text(encoding="utf-8")
+              trusted = _function_body(script, "trusted_request_run")
+              bot = _function_body(script, "find_bot_trigger_comment")
+
+              assert ".pull_request.updated_at" not in script
+              assert '.event == "pull_request_target"' in trusted
+              assert ".workflow_id" in trusted
+              assert ".path == $workflow_path" in trusted
+              assert ".pull_requests[]?" in trusted
+              assert '(.head.sha // "") == $head' in trusted
+              assert "ai-native-codex-review-run" in bot
+
+
+          def test_request_comment_records_request_run_id() -> None:
+              script = GATE.read_text(encoding="utf-8")
+              request = _function_body(script, "request_review")
+
+              assert "RUN_MARKER" in script
+              assert '"$RUN_MARKER"' in request
+
+
+          '''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit("failed to replace gate activation regression test")
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Validate
+        run: |
+          python -m pytest -q
+          python validator/validate_standard.py
+      - name: Commit hardened governance
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/apply-governance-hardening.yml
+          git add -A
+          git commit -m "fix: harden current-HEAD review governance"
+          git push origin HEAD:align/codex-governance
