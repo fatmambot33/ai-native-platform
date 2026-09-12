@@ -71,6 +71,18 @@ has_matching_review() {
     <<<"$reviews" >/dev/null
 }
 
+has_dismissed_matching_review() {
+  local reviews
+  find_trigger_comment
+  [[ -n "$COMMENT_ID" && -n "$COMMENT_CREATED_AT" ]] || return 1
+  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+  jq -e \
+    --arg head "$HEAD_SHA" \
+    --arg since "$COMMENT_CREATED_AT" \
+    "any(.[]; (${is_codex_login}) and ((.state // \"\") == \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
+    <<<"$reviews" >/dev/null
+}
+
 has_unresolved_codex_threads() {
   local query cursor response has_next
   query='query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
@@ -328,7 +340,9 @@ has_clear_codex_evidence() {
 request_review() {
   find_bot_trigger_comment
   if [[ -n "$COMMENT_ID" ]]; then
-    if codex_failure_after "$COMMENT_CREATED_AT" >/dev/null; then
+    if has_dismissed_matching_review; then
+      echo "Matching Codex review was dismissed; this explicit ${REQUEST_LABEL} event authorizes one replacement review."
+    elif codex_failure_after "$COMMENT_CREATED_AT" >/dev/null; then
       echo "Prior Codex request failed; this explicit ${REQUEST_LABEL} event authorizes one retry."
     else
       local failure_status=$?
