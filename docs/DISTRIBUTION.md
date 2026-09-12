@@ -1,6 +1,6 @@
 # Distribution
 
-`v0.2.0` supports two immutable distribution modes.
+`v0.3.0` supports two immutable distribution modes.
 
 ## Reusable public workflow
 
@@ -9,12 +9,12 @@ Public consumers can call the canonical workflow directly without a cross-reposi
 ```yaml
 jobs:
   conformance:
-    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.2.0
+    uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.3.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
 ```
 
-Consumers must pin `v0.2.0` or an immutable commit SHA. Never use `@main` in production.
+Consumers must pin `v0.3.0` or an immutable commit SHA. Never use `@main` in production.
 
 The workflow accepts an optional `standard_token` only for private mirrors or other authenticated
 cross-repository scenarios. Public consumption does not require it, and tokens must never be
