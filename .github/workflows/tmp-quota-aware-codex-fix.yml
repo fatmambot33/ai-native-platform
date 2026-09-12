@@ -54,6 +54,61 @@ jobs:
               'run("git", "rm", ".github/scripts/tmp_quota_patch.py")',
               'run("git", "rm", "-f", ".github/scripts/tmp_quota_patch.py")',
           )
+
+          helper = r'''
+          def format_generated_tests() -> None:
+              target = ROOT / "tests/test_ai_review_governance_hardening.py"
+              generated = target.read_text(encoding="utf-8")
+              generated = generated.replace(
+                  "    if: github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'codex:review'\n",
+                  "    if: >-\n"
+                  "      github.event_name == 'pull_request_target' &&\n"
+                  "      github.event.action == 'labeled' &&\n"
+                  "      github.event.label.name == 'codex:review'\n",
+                  1,
+              )
+              generated = generated.replace(
+                  '    assert any("opened, synchronize, reopened, ready_for_review, edited, and labeled" in item.message for item in _findings(tmp_path))\n',
+                  '    assert any(\n'
+                  '        "opened, synchronize, reopened, ready_for_review, edited, and labeled"\n'
+                  '        in item.message\n'
+                  '        for item in _findings(tmp_path)\n'
+                  '    )\n',
+                  1,
+              )
+              generated = generated.replace(
+                  '    assert any("pull_request_target must run only on labeled" in item.message for item in _findings(tmp_path))\n',
+                  '    assert any(\n'
+                  '        "pull_request_target must run only on labeled" in item.message\n'
+                  '        for item in _findings(tmp_path)\n'
+                  '    )\n',
+                  1,
+              )
+              function_start = generated.index(
+                  "\ndef test_review_gate_requires_explicit_codex_review_label_condition"
+              )
+              generated = generated[:function_start] + r'''
+
+          def test_review_gate_requires_explicit_codex_review_label_condition(tmp_path: Path) -> None:
+              workflow = WORKFLOW.replace(
+                  "      github.event.label.name == 'codex:review'\n",
+                  "      github.event.label.name == 'other'\n",
+              )
+              _write_repository(tmp_path, workflow)
+              assert any(
+                  "codex:review labeled events" in item.message for item in _findings(tmp_path)
+              )
+          '''
+              target.write_text(generated, encoding="utf-8")
+
+
+          '''
+          text = text.replace('\ndef patch_docs() -> None:\n', helper + 'def patch_docs() -> None:\n', 1)
+          text = text.replace(
+              '    patch_tests()\n    patch_docs()\n',
+              '    patch_tests()\n    format_generated_tests()\n    patch_docs()\n',
+              1,
+          )
           path.write_text(text, encoding='utf-8')
 
           tests = Path('tests/test_ai_review_governance_hardening.py')
