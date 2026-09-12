@@ -24,6 +24,13 @@ def test_codex_review_action_wires_review_context() -> None:
     assert "CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}" in action
 
 
+def test_codex_review_gate_requires_trusted_request_markers() -> None:
+    """Only accept context markers created by the trusted Actions bot."""
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'select((.user.login // "") == "github-actions[bot]")' in script
+
+
 def test_context_requires_a_context_specific_request(tmp_path: Path) -> None:
     """Do not accept an old HEAD review before a context request exists."""
     fake_bin = tmp_path / "bin"
