@@ -4,6 +4,11 @@ All notable changes are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- Reject manifest-v1 declarations of the v2-only `agent.skills` block so welcome and troubleshooting capabilities cannot be claimed without the corresponding v2 contract and evidence rules.
+- Pin the bundled reusable validation workflow and distribution examples to `v0.3.0`, matching the manifest-v2 starter shipped by the current release.
+
 ## [0.3.0] - 2026-09-11
 
 ### Added
