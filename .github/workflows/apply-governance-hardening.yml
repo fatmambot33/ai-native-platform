@@ -26,6 +26,22 @@ jobs:
         run: |
           sed -i 's/re.subn(pattern, replacement, text, count=1, flags=re.S)/re.subn(pattern, lambda _: replacement, text, count=1, flags=re.S)/' .github/scripts/apply_governance_hardening.py
           python .github/scripts/apply_governance_hardening.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("tests/test_validation.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "  request:\n    if: github.event_name == 'pull_request_target'\n",
+              "  request:\n    if: github.event_name == 'pull_request_target'\n    runs-on: ubuntu-latest\n",
+              1,
+          )
+          text = text.replace(
+              "  codex-review:\n    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')\n",
+              "  codex-review:\n    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')\n    runs-on: ubuntu-latest\n",
+              1,
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
       - name: Validate
         run: |
           python -m pytest -q
