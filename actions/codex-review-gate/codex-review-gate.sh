@@ -37,6 +37,7 @@ find_trigger_comment() {
       --arg marker "$MARKER" \
       '[
         .[]
+        | select((.user.login // "") == "github-actions[bot]")
         | select((.created_at // "") == (.updated_at // ""))
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
@@ -48,6 +49,7 @@ find_trigger_comment() {
       --arg marker "$MARKER" \
       '[
         .[]
+        | select((.user.login // "") == "github-actions[bot]")
         | select((.created_at // "") == (.updated_at // ""))
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
