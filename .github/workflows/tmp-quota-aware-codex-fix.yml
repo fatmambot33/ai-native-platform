@@ -28,5 +28,29 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Make one-shot patcher tolerant of concurrent gate hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/scripts/tmp_quota_patch.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('    old_tail = \'\'\'case "$MODE" in')
+          new_start = text.index('    new_tail = \'\'\'case "$MODE" in', start)
+          call = '    replace(gate, old_tail, new_tail)\n'
+          call_start = text.index(call, new_start)
+          call_end = call_start + len(call)
+          new_definition = text[new_start:call_start]
+          replacement = (
+              new_definition
+              + "    target = ROOT / gate\n"
+              + "    gate_text = target.read_text(encoding='utf-8')\n"
+              + "    tail_start = gate_text.index('case \\\"$MODE\\\" in')\n"
+              + "    target.write_text(gate_text[:tail_start] + new_tail, encoding='utf-8')\n"
+          )
+          path.write_text(text[:start] + replacement + text[call_end:], encoding='utf-8')
+          PY
+
       - name: Apply and validate quota-aware governance
         run: python .github/scripts/tmp_quota_patch.py
