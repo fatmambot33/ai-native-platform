@@ -5,27 +5,20 @@ set -euo pipefail
 : "${REPO:?REPO is required}"
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
-: "${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH is required}"
+: "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
+: "${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}"
 
 MODE="${CODEX_REVIEW_MODE:-wait}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 SHORT_SHA="${HEAD_SHA:0:10}"
 MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
+RUN_MARKER="<!-- ai-native-codex-review-run:${GITHUB_RUN_ID} -->"
 COMMENT_ID=""
 OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
-HEAD_ACTIVE_SINCE="$(
-  jq -er \
-    --arg head "$HEAD_SHA" \
-    'select((.pull_request.head.sha // "") == $head)
-     | .pull_request.updated_at
-     | select(type == "string" and length > 0)' \
-    "$GITHUB_EVENT_PATH"
-)" || {
-  echo "::error::Unable to prove when current PR HEAD ${SHORT_SHA} became active from the GitHub event payload."
-  exit 2
-}
+WORKFLOW_PATH="${GITHUB_WORKFLOW_REF#${REPO}/}"
+WORKFLOW_PATH="${WORKFLOW_PATH%@*}"
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -116,32 +109,86 @@ has_unresolved_codex_threads() {
   done
 }
 
+current_workflow_id() {
+  local run
+  if ! run="$(gh api "repos/${REPO}/actions/runs/${GITHUB_RUN_ID}")"; then
+    echo "::error::Unable to load the current governance workflow run."
+    return 2
+  fi
+  jq -er '.workflow_id | tostring' <<<"$run" || {
+    echo "::error::Current governance run is missing a workflow ID."
+    return 2
+  }
+}
+
+trusted_request_run() {
+  local run_id="$1"
+  local comment_created_at="$2"
+  local workflow_id run
+  if ! workflow_id="$(current_workflow_id)"; then
+    return 2
+  fi
+  if ! run="$(gh api "repos/${REPO}/actions/runs/${run_id}")"; then
+    echo "::error::Unable to load request workflow run ${run_id}."
+    return 2
+  fi
+  jq -e \
+    --arg workflow_id "$workflow_id" \
+    --arg workflow_path "$WORKFLOW_PATH" \
+    --arg head "$HEAD_SHA" \
+    --arg created_at "$comment_created_at" \
+    --argjson pr "$PR_NUMBER" \
+    '(.workflow_id | tostring) == $workflow_id
+     and .event == "pull_request_target"
+     and .path == $workflow_path
+     and ((.created_at // "") <= $created_at)
+     and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head)' \
+    <<<"$run" >/dev/null
+}
+
 find_bot_trigger_comment() {
-  local comments
-  comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
-  COMMENT_ID="$(
+  local comments row id created_at run_id status
+  COMMENT_ID=""
+  if ! comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"; then
+    echo "::error::Unable to query Codex review-request comments."
+    return 2
+  fi
+  while IFS=$'\t' read -r id created_at run_id; do
+    [[ -n "$id" ]] || continue
+    if trusted_request_run "$run_id" "$created_at"; then
+      COMMENT_ID="$id"
+      return 0
+    fi
+    status=$?
+    if [[ "$status" -eq 2 ]]; then
+      return 2
+    fi
+  done < <(
     jq -r \
       --arg marker "$MARKER" \
-      --arg active_since "$HEAD_ACTIVE_SINCE" \
       '[
         .[]
         | select((.user.login // "") == "github-actions[bot]")
         | select((.created_at // "") == (.updated_at // ""))
-        | select((.created_at // "") >= $active_since)
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
-      ] | last | .id // empty' \
+        | . as $comment
+        | (try (($comment.body // "") | capture("<!-- ai-native-codex-review-run:(?<run_id>[0-9]+) -->")) catch null) as $run
+        | select($run != null)
+        | [$comment.id, $comment.created_at, $run.run_id]
+      ] | reverse[] | @tsv' \
       <<<"$comments"
-  )"
+  )
+  return 0
 }
 
 find_bootstrap_trigger_comment() {
   local comments
+  COMMENT_ID=""
   comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"
   COMMENT_ID="$(
     jq -r \
       --arg marker "$MARKER" \
-      --arg active_since "$HEAD_ACTIVE_SINCE" \
       '[
         .[]
         | select(
@@ -150,7 +197,6 @@ find_bootstrap_trigger_comment() {
             or (.author_association // "") == "COLLABORATOR"
           )
         | select((.created_at // "") == (.updated_at // ""))
-        | select((.created_at // "") >= $active_since)
         | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
         | select((.body // "") | contains($marker))
       ] | last | .id // empty' \
@@ -200,7 +246,7 @@ request_review() {
     return 0
   fi
   local body response
-  body="$(printf '@codex review\n\nAutomated AI Native Platform merge gate for `%s`.\n%s\n' "$SHORT_SHA" "$MARKER")"
+  body="$(printf '@codex review\n\nAutomated AI Native Platform merge gate for `%s`.\n%s\n%s\n' "$SHORT_SHA" "$MARKER" "$RUN_MARKER")"
   response="$(
     gh api --method POST \
       "repos/${REPO}/issues/${PR_NUMBER}/comments" \
