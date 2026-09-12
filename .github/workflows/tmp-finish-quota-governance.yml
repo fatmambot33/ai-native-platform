@@ -1,0 +1,179 @@
+name: Finish quota-aware Codex governance
+
+on:
+  push:
+    branches: [align/codex-governance]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finish-quota-aware-codex-governance
+  cancel-in-progress: false
+
+jobs:
+  finish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      OLD_REF: cd1f286222a286508c962288671c1f6c97b52d95
+      NEW_REF: 6f365e9bfba6a44bc208e8acd778809fd7eb1c49
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: align/codex-governance
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Finalize quota-aware governance
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          old = os.environ["OLD_REF"]
+          new = os.environ["NEW_REF"]
+
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z"],
+              text=False,
+          ).split(b"\0")
+          for raw in tracked:
+              if not raw:
+                  continue
+              path = Path(raw.decode())
+              if not path.is_file():
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              if old in text:
+                  path.write_text(text.replace(old, new), encoding="utf-8")
+
+          workflow = Path(".github/workflows/codex-review.yml")
+          text = workflow.read_text(encoding="utf-8")
+          text = text.replace(
+              "types: [opened, synchronize, reopened, ready_for_review, edited]",
+              "types: [opened, synchronize, reopened, ready_for_review, edited, labeled]",
+          )
+          workflow.write_text(text, encoding="utf-8")
+
+          gate_tests = Path("tests/test_codex_review_gate.py")
+          text = gate_tests.read_text(encoding="utf-8")
+          marker = "test_review_requests_are_explicit_one_shot_and_quota_aware"
+          if marker not in text:
+              text = text.rstrip() + '''
+
+
+def test_review_requests_are_explicit_one_shot_and_quota_aware() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    request = _function_body(script, "request_review")
+
+    assert 'REQUEST_LABEL="${CODEX_REVIEW_REQUEST_LABEL:-codex:review}"' in script
+    assert "is_request_label_event" in script
+    assert "clear_request_label" in script
+    assert "still pending; preserving quota" in request
+    assert "authorizes one retry" in request
+
+
+def test_wait_path_fails_fast_until_merge_ready_label_is_applied() -> None:
+    script = GATE.read_text(encoding="utf-8")
+
+    assert "if ! is_wait_label_event; then" in script
+    assert "Run deterministic CI and batch fixes" in script
+
+
+def test_quota_exhaustion_fails_without_automatic_retry() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    failure = _function_body(script, "codex_failure_after")
+
+    assert "reached your Codex usage limits for code reviews" in failure
+    assert "No automatic retry will be attempted" in failure
+'''
+              gate_tests.write_text(text + "\n", encoding="utf-8")
+
+          docs = Path("docs/AI_REVIEW_GOVERNANCE.md")
+          text = docs.read_text(encoding="utf-8")
+          if "## Quota-aware review lifecycle" not in text:
+              text = text.rstrip() + '''
+
+## Quota-aware review lifecycle
+
+Codex review is asynchronous and quota-limited. Deterministic CI, linting,
+tests, conformance, and security checks run during normal iteration. New
+commits or base changes invalidate stale Codex evidence but do not
+automatically request another review.
+
+When the exact current HEAD/base pair is green and merge-ready, apply the
+one-shot `codex:review` label. Only that label authorizes a quota-consuming
+request. The gate clears the label after handling it and deduplicates a
+still-pending request.
+
+If Codex reports code-review quota exhaustion or a terminal request failure,
+the gate fails closed and never retries automatically. Re-apply
+`codex:review` only after capacity returns or the failure is understood.
+
+Repositories migrating from the earlier workflow must add `labeled` to the
+PR lifecycle. Existing `synchronize` events remain useful for invalidating
+stale evidence, but the gate will not request Codex on those events. The
+merge invariant remains exact current HEAD/base Codex evidence with zero
+unresolved Codex-authored review threads.
+'''
+              docs.write_text(text + "\n", encoding="utf-8")
+
+          agents = Path("AGENTS.md")
+          text = agents.read_text(encoding="utf-8")
+          marker = "Treat Codex code review as asynchronous and quota-limited"
+          if marker not in text:
+              text = text.rstrip() + '''
+
+- Treat Codex code review as asynchronous and quota-limited: batch fixes,
+  rely on deterministic checks during iteration, request a fresh review only
+  for a merge-ready exact HEAD/base checkpoint, and never auto-retry a failed
+  or quota-exhausted review.
+'''
+              agents.write_text(text + "\n", encoding="utf-8")
+
+          Path(".github/workflows/tmp-finish-quota-governance.yml").unlink()
+          PY
+
+      - name: Install development dependencies
+        run: python -m pip install --disable-pip-version-check -e '.[dev]'
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest
+
+      - name: Validate canonical standard
+        run: python validator/validate_standard.py
+
+      - name: Validate consumer fixture
+        run: >-
+          python -m ai_native validate
+          fixtures/consumer-repository/AI_NATIVE_PLATFORM.yaml
+          --root fixtures/consumer-repository
+
+      - name: Validate shell gate
+        run: bash -n actions/codex-review-gate/codex-review-gate.sh
+
+      - name: Build
+        run: python -m build
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit validated result
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: conserve Codex review quota at merge-ready checkpoints"
+          git push origin HEAD:align/codex-governance
