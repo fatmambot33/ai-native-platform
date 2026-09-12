@@ -311,7 +311,11 @@ codex_failure_after() {
 }
 
 has_trigger_clean_reaction() {
-  [[ -n "$COMMENT_ID" ]] || find_trigger_comment
+  COMMENT_ID=""
+  COMMENT_CREATED_AT=""
+  if ! find_bot_trigger_comment; then
+    return 2
+  fi
   [[ -n "$COMMENT_ID" ]] || return 1
   local reactions
   reactions="$(api_list "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions?per_page=100")"
