@@ -10,5 +10,6 @@ jobs:
     uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.3.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
+      standard_ref: v0.3.0
     secrets:
       standard_token: ${{ secrets.AI_NATIVE_PLATFORM_TOKEN }}
