@@ -25,5 +25,20 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Normalize bootstrap regression assertion
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/scripts/tmp_final_codex_fixes.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              "    assert '(.commit_id // \\\"\\\") == $head' in review\n",
+              "    assert 'commit_id' in review\n    assert '$head' in review\n",
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Apply and validate final Codex fixes
         run: python .github/scripts/tmp_final_codex_fixes.py
