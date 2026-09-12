@@ -78,7 +78,9 @@ evidence:
     schemas: schemas
     docs: docs
     examples: examples
-    # May point to a security workflow or a document proving native ruleset/default-setup enforcement.
+    # AI review governance is unreleased and intentionally omitted from the v0.2 starter.
+    # Consumers may opt in by declaring ai_review_workflow while pinned to an implementing SHA.
+    # May point to a security workflow or a document proving native GitHub CodeQL, default setup, or ruleset enforcement.
     security_evidence: .github/SECURITY_ENFORCEMENT.md
     # Required for manifest v2 when a plugin or MCP agent surface is enabled.
     welcome_skill: skills/welcome/SKILL.md

@@ -1,1 +1,11 @@
-* @fatmambot33
+/.github/workflows/** @fatmambot33
+/.github/CODEOWNERS @fatmambot33
+/actions/codex-review-gate/** @fatmambot33
+/schemas/** @fatmambot33
+/standard/** @fatmambot33
+/ai_native.py @fatmambot33
+/validator/** @fatmambot33
+/templates/** @fatmambot33
+/docs/GOVERNANCE.md @fatmambot33
+/pyproject.toml @fatmambot33
+/tools/release_artifacts.py @fatmambot33
