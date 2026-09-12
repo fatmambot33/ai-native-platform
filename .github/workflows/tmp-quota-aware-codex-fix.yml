@@ -49,7 +49,12 @@ jobs:
               + "    tail_start = gate_text.index('case \\\"$MODE\\\" in')\n"
               + "    target.write_text(gate_text[:tail_start] + new_tail, encoding='utf-8')\n"
           )
-          path.write_text(text[:start] + replacement + text[call_end:], encoding='utf-8')
+          text = text[:start] + replacement + text[call_end:]
+          text = text.replace(
+              'run("git", "rm", ".github/scripts/tmp_quota_patch.py")',
+              'run("git", "rm", "-f", ".github/scripts/tmp_quota_patch.py")',
+          )
+          path.write_text(text, encoding='utf-8')
           PY
 
       - name: Apply and validate quota-aware governance
