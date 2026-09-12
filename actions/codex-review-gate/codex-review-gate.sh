@@ -7,11 +7,17 @@ set -euo pipefail
 : "${HEAD_SHA:?HEAD_SHA is required}"
 
 MODE="${CODEX_REVIEW_MODE:-wait}"
+REVIEW_CONTEXT="${CODEX_REVIEW_CONTEXT:-}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 SHORT_SHA="${HEAD_SHA:0:10}"
-MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
+if [[ -n "$REVIEW_CONTEXT" ]]; then
+  MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA}:${REVIEW_CONTEXT} -->"
+else
+  MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA} -->"
+fi
 COMMENT_ID=""
+COMMENT_CREATED_AT=""
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -21,15 +27,6 @@ api_list() {
     -H "Accept: application/vnd.github+json" \
     "$endpoint" \
     --jq '.[]' | jq -s '.'
-}
-
-has_matching_review() {
-  local reviews
-  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
-  jq -e \
-    --arg head "$HEAD_SHA" \
-    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
-    <<<"$reviews" >/dev/null
 }
 
 find_trigger_comment() {
@@ -47,6 +44,37 @@ find_trigger_comment() {
       ] | last | .id // empty' \
       <<<"$comments"
   )"
+  COMMENT_CREATED_AT="$(
+    jq -r \
+      --arg marker "$MARKER" \
+      '[
+        .[]
+        | select((.user.login // "") == "github-actions[bot]")
+        | select((.created_at // "") == (.updated_at // ""))
+        | select((.body // "") | test("^@codex review(\\r?\\n|$)"))
+        | select((.body // "") | contains($marker))
+      ] | last | .created_at // empty' \
+      <<<"$comments"
+  )"
+}
+
+has_matching_review() {
+  local reviews
+  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+  if [[ -n "$REVIEW_CONTEXT" ]]; then
+    [[ -n "$COMMENT_ID" ]] || find_trigger_comment
+    [[ -n "$COMMENT_ID" && -n "$COMMENT_CREATED_AT" ]] || return 1
+    jq -e \
+      --arg head "$HEAD_SHA" \
+      --arg requested_at "$COMMENT_CREATED_AT" \
+      "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$requested_at))" \
+      <<<"$reviews" >/dev/null
+    return
+  fi
+  jq -e \
+    --arg head "$HEAD_SHA" \
+    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
+    <<<"$reviews" >/dev/null
 }
 
 has_trigger_clean_reaction() {
@@ -62,7 +90,7 @@ has_trigger_clean_reaction() {
 request_review() {
   find_trigger_comment
   if [[ -n "$COMMENT_ID" ]]; then
-    echo "Codex review request for current HEAD ${SHORT_SHA} already exists."
+    echo "Codex review request for current HEAD ${SHORT_SHA} and review context already exists."
     return 0
   fi
   local body response
@@ -73,13 +101,14 @@ request_review() {
       -f body="$body"
   )"
   COMMENT_ID="$(jq -r '.id' <<<"$response")"
+  COMMENT_CREATED_AT="$(jq -r '.created_at // empty' <<<"$response")"
   echo "Requested Codex review for current HEAD ${SHORT_SHA}."
 }
 
 case "$MODE" in
   request)
     if has_matching_review; then
-      echo "Codex already reviewed current HEAD ${SHORT_SHA}."
+      echo "Codex already reviewed current HEAD ${SHORT_SHA} for this review context."
       exit 0
     fi
     request_review
@@ -97,15 +126,15 @@ echo "Waiting for Codex evidence for current HEAD ${SHORT_SHA}."
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while (( SECONDS < deadline )); do
   if has_matching_review; then
-    echo "Codex review matches current HEAD ${SHORT_SHA}."
+    echo "Codex review matches current HEAD ${SHORT_SHA} and review context."
     exit 0
   fi
   if has_trigger_clean_reaction; then
-    echo "Codex reported no findings for current HEAD ${SHORT_SHA}."
+    echo "Codex reported no findings for current HEAD ${SHORT_SHA} and review context."
     exit 0
   fi
   sleep "$POLL_SECONDS"
 done
 
-echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA}."
+echo "::error::Codex has not completed a review of current HEAD ${SHORT_SHA} for this review context."
 exit 1
