@@ -1,0 +1,32 @@
+name: Align Codex governance
+
+on:
+  push:
+    branches: [align/codex-governance]
+    paths:
+      - .github/workflows/align-codex-governance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: align/codex-governance
+          fetch-depth: 0
+      - name: Inspect merge conflicts
+        run: |
+          git fetch origin chore/codex-review-gate
+          set +e
+          git merge --no-commit --no-ff origin/chore/codex-review-gate
+          status=$?
+          set -e
+          echo "merge_status=$status"
+          echo "--- unmerged files ---"
+          git diff --name-only --diff-filter=U || true
+          echo "--- status ---"
+          git status --short
+          test "$status" -ne 0
