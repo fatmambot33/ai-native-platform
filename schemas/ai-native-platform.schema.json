@@ -535,6 +535,29 @@
       "if": {
         "properties": {
           "version": {
+            "const": 1
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "agent": {
+            "not": {
+              "required": [
+                "skills"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "version": {
             "const": 2
           }
         },
