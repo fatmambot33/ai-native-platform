@@ -25,5 +25,48 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Normalize documentation patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/scripts/tmp_native_codex_polling.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('def patch_docs() -> None:\n')
+          end = text.index('\n\ndef patch_tests() -> None:\n', start)
+          replacement = '''def patch_docs() -> None:
+              path = "docs/AI_REVIEW_GOVERNANCE.md"
+              text = read(path)
+              old = (
+                  "When the exact current HEAD/base pair is green and merge-ready, apply the\\n"
+                  "one-shot `codex:review` label. The privileged `pull_request_target` path runs\\n"
+                  "only for that label. Both request and wait jobs require `actions: read` so\\n"
+                  "server-verified workflow-run provenance also works in private repositories.\\n"
+                  "The request is deduplicated while pending, but a dismissed matching review may\\n"
+                  "be deliberately replaced by applying the label again.\\n"
+              )
+              new = (
+                  "When repository-level Codex automatic review is enabled, opening a non-draft\\n"
+                  "pull request or marking a draft ready already starts Codex. The required wait\\n"
+                  "job reuses that native review and treats the current GitHub workflow run's\\n"
+                  "server timestamp as the activation boundary. It accepts only exact-current-HEAD\\n"
+                  "Codex review evidence created after that boundary (or a clean Codex PR reaction\\n"
+                  "created after it), and it never emits a second `@codex review` request for the\\n"
+                  "same checkpoint.\\n\\n"
+                  "The one-shot `codex:review` label remains an explicit fallback or retry path\\n"
+                  "when no native review is available or an earlier request ended terminally. Both\\n"
+                  "request and wait jobs require `actions: read` so server-verified workflow-run\\n"
+                  "provenance also works in private repositories. Label-triggered requests remain\\n"
+                  "deduplicated while pending, and a dismissed matching review may be deliberately\\n"
+                  "replaced by applying the label again.\\n"
+              )
+              if old not in text:
+                  raise RuntimeError("quota lifecycle documentation paragraph missing")
+              write(path, text.replace(old, new, 1))
+          '''
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          PY
+
       - name: Apply and validate native Codex polling
         run: python .github/scripts/tmp_native_codex_polling.py
