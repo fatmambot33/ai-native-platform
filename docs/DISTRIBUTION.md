@@ -12,9 +12,12 @@ jobs:
     uses: fatmambot33/ai-native-platform/.github/workflows/validate.yml@v0.3.0
     with:
       manifest: AI_NATIVE_PLATFORM.yaml
+      standard_ref: v0.3.0
 ```
 
-Consumers must pin `v0.3.0` or an immutable commit SHA. Never use `@main` in production.
+Consumers must pin `v0.3.0` or an immutable commit SHA. Never use `@main` in production. Keep the
+reusable workflow ref and `standard_ref` aligned so the workflow installs the same immutable
+validator release that defines the manifest contract.
 
 The workflow accepts an optional `standard_token` only for private mirrors or other authenticated
 cross-repository scenarios. Public consumption does not require it, and tokens must never be
