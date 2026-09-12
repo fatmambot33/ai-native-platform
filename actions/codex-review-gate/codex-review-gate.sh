@@ -49,6 +49,11 @@ is_wait_label_event() {
     && "$EVENT_LABEL" == "$REQUEST_LABEL" ]]
 }
 
+is_native_review_event() {
+  [[ "$GITHUB_EVENT_NAME" == "pull_request" \
+    && ( "$EVENT_ACTION" == "opened" || "$EVENT_ACTION" == "ready_for_review" ) ]]
+}
+
 clear_request_label() {
   local encoded_label
   encoded_label="$(jq -rn --arg value "$REQUEST_LABEL" '$value | @uri')"
@@ -324,6 +329,46 @@ has_trigger_clean_reaction() {
     <<<"$reactions" >/dev/null
 }
 
+
+has_native_matching_review() {
+  local since="$1"
+  local reviews
+  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+  jq -e \
+    --arg head "$HEAD_SHA" \
+    --arg since "$since" \
+    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
+    <<<"$reviews" >/dev/null
+}
+
+has_native_clean_reaction() {
+  local since="$1"
+  local reactions
+  reactions="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/reactions?per_page=100")"
+  jq -e \
+    --arg since "$since" \
+    "any(.[]; (${is_codex_login}) and .content == \"+1\" and ((.created_at // \"\") >= \$since))" \
+    <<<"$reactions" >/dev/null
+}
+
+has_native_clear_codex_evidence() {
+  local since="$1"
+  if has_native_matching_review "$since" || has_native_clean_reaction "$since"; then
+    if has_unresolved_codex_threads; then
+      echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+      return 1
+    else
+      local thread_status=$?
+      if [[ "$thread_status" -eq 1 ]]; then
+        return 0
+      fi
+      echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+      return 1
+    fi
+  fi
+  return 1
+}
+
 has_clear_codex_evidence() {
   if has_matching_review || has_trigger_clean_reaction; then
     if has_unresolved_codex_threads; then
@@ -397,6 +442,30 @@ esac
 if has_clear_codex_evidence; then
   echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
   exit 0
+fi
+
+if is_native_review_event; then
+  request_started_at="$(current_run_created_at)" || exit 2
+  echo "Waiting for the native Codex review of current HEAD ${SHORT_SHA}; no duplicate request will be sent."
+  deadline=$((SECONDS + TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
+    if has_native_clear_codex_evidence "$request_started_at"; then
+      echo "Native Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
+      exit 0
+    fi
+    if codex_failure_after "$request_started_at"; then
+      exit 1
+    else
+      failure_status=$?
+      if [[ "$failure_status" -eq 2 ]]; then
+        exit 2
+      fi
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  echo "::error::Native Codex review did not complete cleanly for current HEAD ${SHORT_SHA}."
+  echo "::error::Apply ${REQUEST_LABEL} only as an explicit fallback after confirming the native review ended."
+  exit 1
 fi
 
 if ! is_wait_label_event; then
