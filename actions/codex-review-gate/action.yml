@@ -11,6 +11,10 @@ inputs:
   head-sha:
     description: Current pull request HEAD SHA.
     required: true
+  review-context:
+    description: Optional context key, such as the base SHA, that requires fresh review evidence for the same HEAD.
+    required: false
+    default: ""
   mode:
     description: Either request or wait.
     required: false
@@ -34,6 +38,7 @@ runs:
         REPO: ${{ github.repository }}
         PR_NUMBER: ${{ inputs.pr-number }}
         HEAD_SHA: ${{ inputs.head-sha }}
+        CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}
         CODEX_REVIEW_MODE: ${{ inputs.mode }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
