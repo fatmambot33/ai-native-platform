@@ -13,7 +13,7 @@ All notable changes are documented here.
 
 - Require request jobs to use least-privilege permissions, keep wait jobs read-only, preserve the `codex-review` check name, and reject job-level concurrency/timeouts that can bypass or destabilize the gate.
 - Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities below GitHub's size limit, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation plus registry-controlled executable validation pins.
-- Keep one-time bootstrap evidence limited to unedited OWNER/MEMBER/COLLABORATOR requests for repositories that have not yet landed the protected request workflow.
+- Keep bootstrap evidence fail-closed: collaborator-authored bootstrap markers are not trusted; bootstrap succeeds only through an exact-HEAD native Codex review bound to the active base or trusted bot request evidence bound to the exact HEAD and base revisions.
 
 ### Migration
 
