@@ -1,6 +1,5 @@
-name: Sync maintenance branch
+name: Final maintenance validation
 
-# Retry after tightening the deterministic reconciliation anchor.
 on:
   push:
     branches: [align/codex-governance]
@@ -8,43 +7,31 @@ on:
       - .github/workflows/sync-maintenance.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  sync:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: align/codex-governance
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-      - name: Merge current main and reconcile gate
+      - name: Install development dependencies
+        run: python -m pip install --disable-pip-version-check -e '.[dev]'
+      - name: Validate maintenance candidate
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          if ! git merge --no-edit origin/main; then
-            conflicts="$(git diff --name-only --diff-filter=U | sort)"
-            expected="$(printf '%s\n' actions/codex-review-gate/action.yml actions/codex-review-gate/codex-review-gate.sh tests/test_codex_review_gate.py | sort)"
-            if [ "$conflicts" != "$expected" ]; then
-              echo "Unexpected merge conflicts:"
-              printf '%s\n' "$conflicts"
-              exit 1
-            fi
-            git checkout --ours -- actions/codex-review-gate/action.yml actions/codex-review-gate/codex-review-gate.sh tests/test_codex_review_gate.py
-          fi
-          python maintenance_sync.py
-          git add actions/codex-review-gate/action.yml actions/codex-review-gate/codex-review-gate.sh tests/test_codex_review_gate.py
-          git commit --no-edit
-      - name: Validate merged tree
-        run: |
-          python -m pip install --disable-pip-version-check -e '.[dev]'
           ruff check .
           pytest
           python validator/validate_standard.py
-      - name: Export validated sync
-        run: git push --force origin HEAD:maintenance/pr35-synced
+          python tools/discover_improvements.py --budget 20 > improvement-findings.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          findings = json.loads(Path('improvement-findings.json').read_text())
+          if findings:
+              raise SystemExit(f'Canonical discovery still reports findings: {findings}')
+          PY
