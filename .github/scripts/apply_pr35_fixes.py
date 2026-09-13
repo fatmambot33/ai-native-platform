@@ -95,7 +95,10 @@ def _unowned_workflows(root: Path) -> list[str]:
         failures.append("the entire .github/workflows namespace must be CODEOWNERS-protected")
 ''',
         '''    if not _codeowners_has_workflow_namespace_rule(root):
-        failures.append("CODEOWNERS must contain an explicit .github/workflows namespace rule")
+        failures.append(
+            "the entire .github/workflows namespace must be CODEOWNERS-protected "
+            "by an explicit namespace rule"
+        )
     unowned_workflows = _unowned_workflows(root)
     if unowned_workflows:
         failures.append(
