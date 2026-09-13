@@ -21,12 +21,24 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Merge current main
+      - name: Merge current main and reconcile gate
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          git merge --no-edit origin/main
+          if ! git merge --no-edit origin/main; then
+            conflicts="$(git diff --name-only --diff-filter=U | sort)"
+            expected="$(printf '%s\n' actions/codex-review-gate/action.yml actions/codex-review-gate/codex-review-gate.sh tests/test_codex_review_gate.py | sort)"
+            if [ "$conflicts" != "$expected" ]; then
+              echo "Unexpected merge conflicts:"
+              printf '%s\n' "$conflicts"
+              exit 1
+            fi
+            git checkout --ours -- actions/codex-review-gate/action.yml actions/codex-review-gate/codex-review-gate.sh tests/test_codex_review_gate.py
+          fi
+          python maintenance_sync.py
+          git add actions/codex-review-gate/action.yml actions/codex-review-gate/codex-review-gate.sh tests/test_codex_review_gate.py
+          git commit --no-edit
       - name: Validate merged tree
         run: |
           python -m pip install --disable-pip-version-check -e '.[dev]'
