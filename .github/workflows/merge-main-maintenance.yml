@@ -1,5 +1,6 @@
 name: Merge main maintenance
 
+# Final retry after aligning the review-context regression.
 on:
   push:
     branches: [align/codex-governance]
