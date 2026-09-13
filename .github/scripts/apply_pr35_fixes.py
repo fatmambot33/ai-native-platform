@@ -69,16 +69,22 @@ def _unowned_workflows(root: Path) -> list[str]:
         if workflow.suffix not in {".yml", ".yaml"}:
             continue
         relative = workflow.relative_to(root)
-        if _path_has_symlink_component(root, relative) or not _codeowners_covers_path(root, relative):
+        if (
+            _path_has_symlink_component(root, relative)
+            or not _codeowners_covers_path(root, relative)
+        ):
             missing.append(relative.as_posix())
     return missing
 
 
 '''
+    signature = (
+        "def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:\n"
+    )
     text = replace_once(
         text,
-        "def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:\n",
-        helper + "def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:\n",
+        signature,
+        helper + signature,
         "workflow ownership helpers",
     )
     text = replace_once(
@@ -168,7 +174,11 @@ def test_preflight_clamps_polling_to_timeout() -> None:
 def test_review_gate_rejects_poll_interval_longer_than_timeout(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
         "          request-label: codex:review\n",
-        "          request-label: codex:review\n          timeout-seconds: 30\n          poll-seconds: 3600\n",
+        (
+            "          request-label: codex:review\n"
+            "          timeout-seconds: 30\n"
+            "          poll-seconds: 3600\n"
+        ),
         2,
     )
     _write_repository(tmp_path, workflow)
