@@ -1,6 +1,6 @@
 name: Merge main maintenance
 
-# Final retry after aligning all legacy gate assertions.
+# Export the already-green reconciled tree with transient-push retries.
 on:
   push:
     branches: [align/codex-governance]
@@ -47,4 +47,12 @@ jobs:
           pytest
           python validator/validate_standard.py
       - name: Export validated merge
-        run: git push --force origin HEAD:maintenance/pr35-synced
+        run: |
+          for attempt in 1 2 3 4; do
+            if git push --force origin HEAD:maintenance/pr35-synced; then
+              exit 0
+            fi
+            echo "Transient push failure on attempt ${attempt}."
+            sleep $((attempt * 2))
+          done
+          exit 1
