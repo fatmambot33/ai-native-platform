@@ -1,5 +1,6 @@
 name: Sync maintenance branch
 
+# Retry after tightening the deterministic reconciliation anchor.
 on:
   push:
     branches: [align/codex-governance]
