@@ -14,7 +14,7 @@ from ai_native import (
     template_path,
 )
 
-GATE_REF = "96f34eeb234cb9c4cebf68749a8fcbca969f5865"
+GATE_REF = "48f0c6c4351a040f3214ef01e036b5f00032b2cd"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
@@ -211,3 +211,65 @@ def test_ai_review_workflow_must_be_single_path_in_schema() -> None:
 def test_self_validator_governs_ai_review_policy() -> None:
     source = Path("validator/validate_standard.py").read_text(encoding="utf-8")
     assert '"docs/AI_REVIEW_GOVERNANCE.md",' in source
+
+
+
+def test_preflight_binds_marker_context_to_base_and_custom_context() -> None:
+    source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+    assert 'export CODEX_REVIEW_CONTEXT="${BASE_SHA}:${CUSTOM_CONTEXT}"' in source
+
+
+def test_preflight_verifies_codeowners_with_github() -> None:
+    source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+    assert 'repos/${REPO}/codeowners/errors?ref=${HEAD_SHA}' in source
+    assert "verify_codeowners" in source
+
+
+def test_request_and_wait_requires_explicit_review_label() -> None:
+    source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+    assert '[[ "$MODE" == "request-and-wait" ]]' in source
+    assert "event_label" in source
+    assert 'explicit ${REQUEST_LABEL} label event' in source
+
+
+def test_preflight_clamps_polling_to_timeout() -> None:
+    source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+    assert 'if (( POLL_SECONDS > TIMEOUT_SECONDS )); then' in source
+    assert 'POLL_SECONDS="$TIMEOUT_SECONDS"' in source
+
+
+def test_review_gate_rejects_poll_interval_longer_than_timeout(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "          request-label: codex:review\n",
+        (
+            "          request-label: codex:review\n"
+            "          timeout-seconds: 30\n"
+            "          poll-seconds: 3600\n"
+        ),
+        2,
+    )
+    _write_repository(tmp_path, workflow)
+    assert _findings(tmp_path)
+
+
+def test_review_gate_requires_namespace_wide_codeowners_rule(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    codeowners.write_text(
+        "/.github/workflows/codex-review.yml @repository-owner\n"
+        "/.github/CODEOWNERS @repository-owner\n",
+        encoding="utf-8",
+    )
+    assert any("namespace rule" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_checks_every_existing_workflow_owner(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    extra = tmp_path / ".github" / "workflows" / "bypass.yml"
+    extra.write_text("name: bypass\non: push\njobs: {}\n", encoding="utf-8")
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    codeowners.write_text(
+        codeowners.read_text(encoding="utf-8") + "/.github/workflows/bypass.yml\n",
+        encoding="utf-8",
+    )
+    assert any("bypass.yml" in item.message for item in _findings(tmp_path))

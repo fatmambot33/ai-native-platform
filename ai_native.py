@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "96f34eeb234cb9c4cebf68749a8fcbca969f5865",
+        "48f0c6c4351a040f3214ef01e036b5f00032b2cd",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
@@ -490,6 +490,10 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
     for key in ("timeout-seconds", "poll-seconds"):
         if key in inputs and not _positive_integer_input(inputs[key]):
             return None
+    timeout = int(inputs.get("timeout-seconds", 1800))
+    poll = int(inputs.get("poll-seconds", 60))
+    if poll > timeout:
+        return None
     return uses[len(prefix) :]
 
 
@@ -609,6 +613,46 @@ def _codeowners_covers_path(root: Path, relative: Path) -> bool:
         _valid_codeowner(owner) for owner in effective_owners
     )
 
+
+
+def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
+    """Return whether CODEOWNERS explicitly protects the workflow namespace."""
+    codeowners = root / ".github" / "CODEOWNERS"
+    if _path_has_symlink_component(root, Path(".github/CODEOWNERS")) or not codeowners.is_file():
+        return False
+    accepted = {
+        "/.github/workflows/**",
+        ".github/workflows/**",
+        "/.github/workflows/",
+        ".github/workflows/",
+    }
+    for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if parts and parts[0] in accepted and parts[1:]:
+            if all(_valid_codeowner(owner) for owner in parts[1:]):
+                return True
+    return False
+
+
+def _unowned_workflows(root: Path) -> list[str]:
+    """Return current workflow files lacking effective CODEOWNERS coverage."""
+    directory = root / ".github" / "workflows"
+    if not directory.is_dir() or directory.is_symlink():
+        return [".github/workflows"]
+    missing: list[str] = []
+    for workflow in sorted(directory.iterdir()):
+        if workflow.suffix not in {".yml", ".yaml"}:
+            continue
+        relative = workflow.relative_to(root)
+        if (
+            _path_has_symlink_component(root, relative)
+            or not _codeowners_covers_path(root, relative)
+        ):
+            missing.append(relative.as_posix())
+    return missing
 
 
 def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
@@ -797,10 +841,17 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
     if not _codeowners_covers_path(root, relative):
         failures.append("declared AI review workflow must be covered by .github/CODEOWNERS")
-    if not _codeowners_covers_path(
-        root, Path(".github/workflows/__ai_native_required_check_probe__.yml")
-    ):
-        failures.append("the entire .github/workflows namespace must be CODEOWNERS-protected")
+    if not _codeowners_has_workflow_namespace_rule(root):
+        failures.append(
+            "the entire .github/workflows namespace must be CODEOWNERS-protected "
+            "by an explicit namespace rule"
+        )
+    unowned_workflows = _unowned_workflows(root)
+    if unowned_workflows:
+        failures.append(
+            "every workflow must have effective CODEOWNERS coverage; missing: "
+            + ", ".join(unowned_workflows)
+        )
     if not _codeowners_covers_path(root, Path(".github/CODEOWNERS")):
         failures.append(".github/CODEOWNERS must protect itself with an effective owner rule")
 

@@ -20,8 +20,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Apply PR35 remediation in ephemeral checkout
-        run: python .github/scripts/apply_pr35_fixes.py
       - run: python -m pip install --disable-pip-version-check -e '.[dev]'
       - run: ruff check .
       - run: pytest
@@ -52,18 +50,3 @@ jobs:
           .smoke-venv/bin/ai-native upgrade /tmp/AI_NATIVE_PLATFORM.yaml --dry-run
           .smoke-venv/bin/ai-native validate fixtures/passing/library.yaml --root fixtures --format sarif --output /tmp/ai-native.sarif
           test -s /tmp/ai-native.sarif
-      - name: Package validated PR35 remediation
-        if: matrix.python-version == '3.12'
-        shell: bash
-        run: |
-          mkdir -p /tmp/pr35-remediation
-          for file in ai_native.py .github/workflows/codex-review.yml validator/validate_standard.py tests/test_ai_review_governance_remaining.py tests/test_ai_review_governance_hardening.py tests/test_validation.py; do
-            mkdir -p "/tmp/pr35-remediation/$(dirname "$file")"
-            cp "$file" "/tmp/pr35-remediation/$file"
-          done
-      - name: Upload validated PR35 remediation
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: pr35-remediation-${{ github.event.pull_request.head.sha }}
-          path: /tmp/pr35-remediation

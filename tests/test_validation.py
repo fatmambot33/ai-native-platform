@@ -17,7 +17,7 @@ from ai_native import (
     validate_manifest,
 )
 
-AI_REVIEW_GATE_REF = "96f34eeb234cb9c4cebf68749a8fcbca969f5865"
+AI_REVIEW_GATE_REF = "48f0c6c4351a040f3214ef01e036b5f00032b2cd"
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
