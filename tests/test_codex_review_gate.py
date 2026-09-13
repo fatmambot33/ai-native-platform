@@ -95,22 +95,20 @@ def test_explicit_label_can_replace_a_dismissed_review() -> None:
 
     assert "DISMISSED" in dismissed
     assert "has_dismissed_matching_review" in request
-    assert "is_request_label_event" in request
+    assert "if ! is_request_label_event" in script
 
 
 def test_gate_does_not_auto_retry_review_requests() -> None:
     script = GATE.read_text(encoding="utf-8")
     request = _function_body(script, "request_review")
 
-    assert "is_request_label_event" in request
-    assert "already exists" in request
+    assert "still pending; preserving quota" in request
     assert "No automatic retry will be attempted" in script
 
 
 def test_gate_validates_request_comments_without_mutating_them() -> None:
     script = GATE.read_text(encoding="utf-8")
 
-    assert "issues/comments/${COMMENT_ID}" not in script
     assert "--method PATCH" not in script
 
 
@@ -152,20 +150,20 @@ def test_gate_detects_terminal_codex_failures() -> None:
 
 def test_gate_clears_one_shot_label_after_request() -> None:
     script = GATE.read_text(encoding="utf-8")
-    request = _function_body(script, "request_review")
 
-    assert "clear_request_label" in request
-    assert "@codex review" in request
+    assert "clear_request_label" in script
+    assert "trap clear_request_label EXIT" in script
+    assert "@codex review" in script
 
 
-def test_gate_rejects_stale_or_missing_revision_events() -> None:
+def test_gate_binds_request_provenance_to_pr_revision() -> None:
     script = GATE.read_text(encoding="utf-8")
-    wait = _function_body(script, "wait_for_review")
+    trusted = _function_body(script, "trusted_request_run")
 
-    assert "GITHUB_EVENT_PATH" in script
-    assert ".pull_request.head.sha" in wait
-    assert ".pull_request.base.sha" in wait
-    assert "does not match current PR revision" in wait
+    assert ".head.sha" in trusted
+    assert ".base.sha" in trusted
+    assert "$head" in trusted
+    assert "$base" in trusted
 
 
 def test_reusable_gate_preserves_context_and_pr_head_status_surface() -> None:
