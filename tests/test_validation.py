@@ -17,7 +17,7 @@ from ai_native import (
     validate_manifest,
 )
 
-AI_REVIEW_GATE_REF = "7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5"
+AI_REVIEW_GATE_REF = "70a27f1691c870f1f5423698b2864edd96fee98c"
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
 AI_REVIEW_WORKFLOW = """name: Codex review governance
 on:
@@ -26,7 +26,9 @@ on:
   pull_request_target:
     types: [labeled]
   pull_request_review:
-    types: [dismissed]
+    types: [submitted, dismissed]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
 permissions:
   contents: read
 concurrency:
@@ -54,7 +56,7 @@ jobs:
           mode: request
           request-label: codex:review
   codex-review:
-    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -392,8 +394,7 @@ def test_ai_review_workflow_rejects_multiple_paths(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
-        finding.code == "schema.invalid"
-        and finding.path == "evidence.paths.ai_review_workflow"
+        finding.code == "schema.invalid" and finding.path == "evidence.paths.ai_review_workflow"
         for finding in findings
     )
 
@@ -448,9 +449,7 @@ def test_ai_review_workflow_rejects_ignored_gate_failure(tmp_path: Path) -> None
 
 
 def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
-    canonical = (
-        "if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
-    )
+    canonical = "if: github.event.pull_request.draft == false"
     findings = _validate_ai_review_text(
         tmp_path,
         AI_REVIEW_WORKFLOW.replace(canonical, canonical + " && false"),

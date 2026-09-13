@@ -225,3 +225,25 @@ def test_gate_reuses_late_native_review_before_fallback_request() -> None:
     block = source.split("request_review() {", 1)[1].split("\n}\n", 1)[0]
     assert "has_any_native_clear_codex_evidence" in block
     assert block.index("has_any_native_clear_codex_evidence") < block.index("gh api --method POST")
+
+
+def test_native_evidence_is_reusable_for_exact_revision() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    reusable = _function_body(script, "has_any_native_clear_codex_evidence")
+    assert "revision_activation_created_at" in reusable
+    assert "has_trusted_native_review_run" in reusable
+    assert "has_native_matching_review" in reusable
+
+
+def test_native_clean_reaction_remains_revision_bound_evidence() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    reusable = _function_body(script, "has_any_native_clear_codex_evidence")
+    assert "has_single_base_for_head" in reusable
+    assert "has_native_clean_reaction" in reusable
+
+
+def test_dismissal_query_errors_fail_closed() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    reaction = _function_body(script, "has_trigger_clean_reaction")
+    assert "dismissal_status" in reaction
+    assert "Unable to prove marker-backed review evidence is not dismissed" in reaction

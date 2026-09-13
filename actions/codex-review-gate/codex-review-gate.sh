@@ -539,7 +539,7 @@ has_any_native_clear_codex_evidence() {
       echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
       return 1
     else
-      local thread_status=$?
+    local thread_status=$?
       if [[ "$thread_status" -eq 1 ]]; then
         return 0
       fi

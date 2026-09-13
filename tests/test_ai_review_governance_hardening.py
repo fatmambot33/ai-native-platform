@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_findings
 
-GATE_REF = "7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5"
+GATE_REF = "70a27f1691c870f1f5423698b2864edd96fee98c"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
@@ -15,7 +15,9 @@ on:
   pull_request_target:
     types: [labeled]
   pull_request_review:
-    types: [dismissed]
+    types: [submitted, dismissed]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
 permissions:
   contents: read
 concurrency:
@@ -43,7 +45,7 @@ jobs:
           mode: request
           request-label: codex:review
   codex-review:
-    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -131,14 +133,14 @@ def test_review_gate_rejects_additional_jobs(tmp_path: Path) -> None:
 
 def test_review_gate_requires_review_dismissal_recheck(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
-        "  pull_request_review:\n    types: [dismissed]\n",
+        "  pull_request_review:\n    types: [submitted, dismissed]\n",
         "",
     )
     _write_repository(tmp_path, workflow)
 
     findings = _findings(tmp_path)
 
-    assert any("pull_request_review must run on dismissed" in item.message for item in findings)
+    assert any("submitted and dismissed" in item.message for item in findings)
 
 
 def test_review_gate_requires_evaluated_concurrency_event_expression(tmp_path: Path) -> None:
@@ -443,3 +445,36 @@ def test_review_gate_rejects_symlinked_workflow(tmp_path: Path) -> None:
     workflow.unlink()
     workflow.symlink_to(target)
     assert any("regular file, not a symlink" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_submitted_review_activity(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("types: [submitted, dismissed]", "types: [dismissed]", 1)
+    _write_repository(tmp_path, workflow)
+    assert any("submitted and dismissed" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_requires_review_thread_revalidation(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "  pull_request_review_thread:\n    types: [resolved, unresolved]\n", "", 1
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("resolved and unresolved" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_ambiguous_on_keys(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("on:\n", '"on":\n', 1) + "\non:\n  push:\n"
+    _write_repository(tmp_path, workflow)
+    assert any("both YAML representations" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_namespace_rule_must_remain_effective(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    codeowners.write_text(
+        "/.github/workflows/** @repository-owner\n"
+        "/.github/**\n"
+        "/.github/workflows/codex-review.yml @repository-owner\n"
+        "/.github/CODEOWNERS @repository-owner\n",
+        encoding="utf-8",
+    )
+    assert any("namespace rule" in item.message for item in _findings(tmp_path))

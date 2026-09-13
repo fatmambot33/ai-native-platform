@@ -52,16 +52,12 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5",
+        "70a27f1691c870f1f5423698b2864edd96fee98c",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
-PR_EVENT_FILTER_KEYS = frozenset(
-    {"branches", "branches-ignore", "paths", "paths-ignore"}
-)
-FORBIDDEN_GITHUB_CLI_ENV_KEYS = frozenset(
-    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
-)
+PR_EVENT_FILTER_KEYS = frozenset({"branches", "branches-ignore", "paths", "paths-ignore"})
+FORBIDDEN_GITHUB_CLI_ENV_KEYS = frozenset({"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN"})
 
 
 @dataclass(frozen=True)
@@ -304,6 +300,8 @@ def _path_exists(root: Path, declaration: str) -> bool:
 
 def _workflow_events_value(workflow: Mapping[Any, Any]) -> Any:
     """Return the parsed GitHub workflow event declaration."""
+    if "on" in workflow and True in workflow:
+        return None
     events = workflow.get("on")
     if events is None and True in workflow:
         events = workflow.get(True)
@@ -322,9 +320,7 @@ def _workflow_events(workflow: Mapping[Any, Any]) -> set[str]:
     return set()
 
 
-def _event_runs_on_required_pr_activities(
-    workflow: Mapping[Any, Any], event_name: str
-) -> bool:
+def _event_runs_on_required_pr_activities(workflow: Mapping[Any, Any], event_name: str) -> bool:
     """Return whether a PR event covers every current-HEAD transition."""
     required = {"opened", "synchronize", "reopened", "ready_for_review", "edited", "labeled"}
     events = _workflow_events_value(workflow)
@@ -349,8 +345,6 @@ def _event_runs_on_required_pr_activities(
     return False
 
 
-
-
 def _event_runs_only_on_label(workflow: Mapping[Any, Any], event_name: str) -> bool:
     """Return whether an event is restricted to label changes only."""
     events = _workflow_events_value(workflow)
@@ -368,24 +362,33 @@ def _event_runs_only_on_label(workflow: Mapping[Any, Any], event_name: str) -> b
         return {str(item) for item in types} == {"labeled"}
     return False
 
+
 def _event_runs_on_review_dismissal(workflow: Mapping[Any, Any]) -> bool:
-    """Return whether pull-request review dismissal re-runs governance."""
+    """Return whether submitted and dismissed reviews both re-run governance."""
     events = _workflow_events_value(workflow)
     if not isinstance(events, Mapping) or "pull_request_review" not in events:
         return False
     config = events["pull_request_review"]
-    if config is None:
-        return True
     if not isinstance(config, Mapping):
         return False
     types = config.get("types")
-    if types is None:
-        return True
-    if isinstance(types, str):
-        return types == "dismissed"
-    if isinstance(types, Sequence) and not isinstance(types, (str, bytes)):
-        return "dismissed" in types
-    return False
+    if not isinstance(types, Sequence) or isinstance(types, (str, bytes)):
+        return False
+    return {"submitted", "dismissed"} <= {str(item) for item in types}
+
+
+def _event_runs_on_review_thread_changes(workflow: Mapping[Any, Any]) -> bool:
+    """Return whether review-thread resolution changes re-run governance."""
+    events = _workflow_events_value(workflow)
+    if not isinstance(events, Mapping) or "pull_request_review_thread" not in events:
+        return False
+    config = events["pull_request_review_thread"]
+    if not isinstance(config, Mapping):
+        return False
+    types = config.get("types")
+    if not isinstance(types, Sequence) or isinstance(types, (str, bytes)):
+        return False
+    return {"resolved", "unresolved"} <= {str(item) for item in types}
 
 
 def _job_permissions(job: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -413,7 +416,6 @@ def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
     return condition in {event_only, draft_guard, reverse_guard}
 
 
-
 def _uses_labeled_review_request(job: Mapping[str, Any]) -> bool:
     """Return whether request execution is bound to the one-shot review label."""
     condition = _normalize_condition(job.get("if"))
@@ -424,13 +426,22 @@ def _uses_labeled_review_request(job: Mapping[str, Any]) -> bool:
     draft_guard = f"{event_guard} && github.event.pull_request.draft == false"
     return condition in {event_guard, draft_guard}
 
+
 def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
-    """Return whether the wait job runs on PR updates and review dismissal."""
+    """Return whether the wait job runs on PR, review, and thread updates."""
     condition = _normalize_condition(job.get("if"))
-    event_guard = "(github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+    event_guard = (
+        "(github.event_name == 'pull_request' || github.event_name == 'pull_request_review' "
+        "|| github.event_name == 'pull_request_review_thread')"
+    )
     draft_guard = f"{event_guard} && github.event.pull_request.draft == false"
     reverse_guard = f"github.event.pull_request.draft == false && {event_guard}"
-    return condition in {event_guard, draft_guard, reverse_guard}
+    return condition in {
+        event_guard,
+        draft_guard,
+        reverse_guard,
+        "github.event.pull_request.draft == false",
+    }
 
 
 def _positive_integer_input(value: Any) -> bool:
@@ -627,14 +638,11 @@ def _valid_codeowner(owner: str) -> bool:
 def _codeowners_covers_path(root: Path, relative: Path) -> bool:
     """Return whether the effective CODEOWNERS rule assigns valid owners."""
     effective_owners = _codeowners_effective_owners(root, relative)
-    return bool(effective_owners) and all(
-        _valid_codeowner(owner) for owner in effective_owners
-    )
-
+    return bool(effective_owners) and all(_valid_codeowner(owner) for owner in effective_owners)
 
 
 def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
-    """Return whether CODEOWNERS explicitly protects the workflow namespace."""
+    """Return whether the workflow namespace retains effective CODEOWNERS coverage."""
     codeowners = root / ".github" / "CODEOWNERS"
     if _path_has_symlink_component(root, Path(".github/CODEOWNERS")) or not codeowners.is_file():
         return False
@@ -644,6 +652,7 @@ def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
         "/.github/workflows/",
         ".github/workflows/",
     }
+    namespace_rule = False
     for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -651,8 +660,12 @@ def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
         parts = line.split()
         if parts and parts[0] in accepted and parts[1:]:
             if all(_valid_codeowner(owner) for owner in parts[1:]):
-                return True
-    return False
+                namespace_rule = True
+    if not namespace_rule:
+        return False
+    return _codeowners_covers_path(
+        root, Path(".github/workflows/__ai_native_unmatched_probe__.yml")
+    )
 
 
 def _unowned_workflows(root: Path) -> list[str]:
@@ -665,9 +678,8 @@ def _unowned_workflows(root: Path) -> list[str]:
         if workflow.suffix not in {".yml", ".yaml"}:
             continue
         relative = workflow.relative_to(root)
-        if (
-            _path_has_symlink_component(root, relative)
-            or not _codeowners_covers_path(root, relative)
+        if _path_has_symlink_component(root, relative) or not _codeowners_covers_path(
+            root, relative
         ):
             missing.append(relative.as_posix())
     return missing
@@ -730,10 +742,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         ]
 
     failures: list[str] = []
+    if "on" in workflow and True in workflow:
+        failures.append("workflow must not contain both YAML representations of the on event key")
     if _has_forbidden_github_cli_env(workflow.get("env")):
-        failures.append(
-            "workflow must not override GitHub CLI host or authentication environment"
-        )
+        failures.append("workflow must not override GitHub CLI host or authentication environment")
     events = _workflow_events(workflow)
     if "pull_request" not in events:
         failures.append("missing pull_request event")
@@ -747,7 +759,15 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     elif not _event_runs_only_on_label(workflow, "pull_request_target"):
         failures.append("pull_request_target must run only on labeled events")
     if "pull_request_review" not in events or not _event_runs_on_review_dismissal(workflow):
-        failures.append("pull_request_review must run on dismissed review events")
+        failures.append(
+            "pull_request_review must explicitly run on submitted and dismissed review events"
+        )
+    if "pull_request_review_thread" not in events or not _event_runs_on_review_thread_changes(
+        workflow
+    ):
+        failures.append(
+            "pull_request_review_thread must explicitly run on resolved and unresolved events"
+        )
 
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, Mapping):
@@ -801,9 +821,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         failures.append("codex-review job name must remain codex-review")
 
     if not _uses_labeled_review_request(request):
-        failures.append(
-            "request job condition must bind only codex:review labeled events"
-        )
+        failures.append("request job condition must bind only codex:review labeled events")
     if not _uses_review_wait_events(wait):
         failures.append(
             "codex-review job condition must canonically bind pull_request and pull_request_review"
@@ -928,7 +946,9 @@ def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:
                 )
             )
             continue
-        missing = [declaration for declaration in declarations if not _path_exists(root, declaration)]
+        missing = [
+            declaration for declaration in declarations if not _path_exists(root, declaration)
+        ]
         if missing:
             findings.append(
                 Finding(
@@ -1003,8 +1023,7 @@ def sarif_payload(manifest: Path, findings: Sequence[Finding]) -> dict[str, Any]
                 "name": finding.code.replace(".", "_"),
                 "shortDescription": {"text": finding.message},
                 "helpUri": (
-                    "https://github.com/fatmambot33/ai-native-platform"
-                    "/blob/v0.3.0/README.md"
+                    "https://github.com/fatmambot33/ai-native-platform/blob/v0.3.0/README.md"
                 ),
                 "defaultConfiguration": {"level": finding.level},
             },
@@ -1119,9 +1138,7 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     source_evidence = data.get("evidence", {})
-    source_paths = (
-        source_evidence.get("paths", {}) if isinstance(source_evidence, Mapping) else {}
-    )
+    source_paths = source_evidence.get("paths", {}) if isinstance(source_evidence, Mapping) else {}
 
     defaults = load_mapping(template_path())
     if source_version < CURRENT_MANIFEST_VERSION:
@@ -1133,7 +1150,11 @@ def migrate_manifest(data: Mapping[str, Any]) -> dict[str, Any]:
     migrated_security_key = False
     evidence = migrated.get("evidence", {})
     paths = evidence.get("paths", {}) if isinstance(evidence, Mapping) else {}
-    if isinstance(paths, dict) and isinstance(source_paths, Mapping) and "security_workflow" in source_paths:
+    if (
+        isinstance(paths, dict)
+        and isinstance(source_paths, Mapping)
+        and "security_workflow" in source_paths
+    ):
         if "security_evidence" not in source_paths:
             paths["security_evidence"] = source_paths["security_workflow"]
         paths.pop("security_workflow", None)

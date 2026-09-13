@@ -14,7 +14,7 @@ from ai_native import (
     template_path,
 )
 
-GATE_REF = "7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5"
+GATE_REF = "70a27f1691c870f1f5423698b2864edd96fee98c"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
@@ -23,7 +23,9 @@ on:
   pull_request_target:
     types: [labeled]
   pull_request_review:
-    types: [dismissed]
+    types: [submitted, dismissed]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
 permissions:
   contents: read
 concurrency:
@@ -51,7 +53,7 @@ jobs:
           mode: request
           request-label: codex:review
   codex-review:
-    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -75,16 +77,13 @@ def _write_repository(root: Path, workflow: str = WORKFLOW) -> None:
     workflow_path.parent.mkdir(parents=True, exist_ok=True)
     workflow_path.write_text(workflow, encoding="utf-8")
     (root / ".github" / "CODEOWNERS").write_text(
-        "/.github/workflows/** @repository-owner\n"
-        "/.github/CODEOWNERS @repository-owner\n",
+        "/.github/workflows/** @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
         encoding="utf-8",
     )
 
 
 def _findings(root: Path) -> list:
-    return _single_ai_review_workflow_findings(
-        ".github/workflows/codex-review.yml", root
-    )
+    return _single_ai_review_workflow_findings(".github/workflows/codex-review.yml", root)
 
 
 @pytest.mark.parametrize(
@@ -100,9 +99,7 @@ def _findings(root: Path) -> list:
         ("pull_request_target", "paths-ignore"),
     ],
 )
-def test_review_gate_rejects_pr_filters(
-    tmp_path: Path, event: str, key: str
-) -> None:
+def test_review_gate_rejects_pr_filters(tmp_path: Path, event: str, key: str) -> None:
     needle = (
         "    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]\n"
         if event == "pull_request"
@@ -135,8 +132,7 @@ def test_review_gate_rejects_workflow_cli_env(tmp_path: Path, key: str) -> None:
 def test_review_gate_rejects_job_cli_env(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
         "    runs-on: ubuntu-latest\n    permissions:\n",
-        "    runs-on: ubuntu-latest\n    env:\n      GH_HOST: attacker.example\n"
-        "    permissions:\n",
+        "    runs-on: ubuntu-latest\n    env:\n      GH_HOST: attacker.example\n    permissions:\n",
         1,
     )
     _write_repository(tmp_path, workflow)
@@ -176,8 +172,7 @@ def test_review_gate_rejects_symlinked_workflow_ancestor(tmp_path: Path) -> None
     (real_workflows / "codex-review.yml").write_text(WORKFLOW, encoding="utf-8")
     (github / "workflows").symlink_to("../real-workflows", target_is_directory=True)
     (github / "CODEOWNERS").write_text(
-        "/.github/workflows/** @repository-owner\n"
-        "/.github/CODEOWNERS @repository-owner\n",
+        "/.github/workflows/** @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
         encoding="utf-8",
     )
 
@@ -202,8 +197,7 @@ def test_ai_review_workflow_must_be_single_path_in_schema() -> None:
     findings = contract_findings(data)
 
     assert any(
-        item.code == "schema.invalid"
-        and item.path == "evidence.paths.ai_review_workflow"
+        item.code == "schema.invalid" and item.path == "evidence.paths.ai_review_workflow"
         for item in findings
     )
 
@@ -213,7 +207,6 @@ def test_self_validator_governs_ai_review_policy() -> None:
     assert '"docs/AI_REVIEW_GOVERNANCE.md",' in source
 
 
-
 def test_preflight_binds_marker_context_to_base_and_custom_context() -> None:
     source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
     assert 'export CODEX_REVIEW_CONTEXT="${BASE_SHA}:${CUSTOM_CONTEXT}"' in source
@@ -221,7 +214,7 @@ def test_preflight_binds_marker_context_to_base_and_custom_context() -> None:
 
 def test_preflight_verifies_codeowners_with_github() -> None:
     source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
-    assert 'repos/${REPO}/codeowners/errors?ref=${HEAD_SHA}' in source
+    assert "repos/${REPO}/codeowners/errors?ref=${HEAD_SHA}" in source
     assert "verify_codeowners" in source
 
 
@@ -229,12 +222,12 @@ def test_request_and_wait_requires_explicit_review_label() -> None:
     source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
     assert '[[ "$MODE" == "request-and-wait" ]]' in source
     assert "event_label" in source
-    assert 'explicit ${REQUEST_LABEL} label event' in source
+    assert "explicit ${REQUEST_LABEL} label event" in source
 
 
 def test_preflight_clamps_polling_to_timeout() -> None:
     source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
-    assert 'if (( POLL_SECONDS > TIMEOUT_SECONDS )); then' in source
+    assert "if (( POLL_SECONDS > TIMEOUT_SECONDS )); then" in source
     assert 'POLL_SECONDS="$TIMEOUT_SECONDS"' in source
 
 
@@ -273,7 +266,6 @@ def test_review_gate_checks_every_existing_workflow_owner(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     assert any("bypass.yml" in item.message for item in _findings(tmp_path))
-
 
 
 def test_review_gate_requires_matching_review_contexts(tmp_path: Path) -> None:

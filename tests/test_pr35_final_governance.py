@@ -18,7 +18,7 @@ def test_native_review_thread_status_is_captured_in_else_branch() -> None:
 
 def test_trusted_gate_ref_is_finalized_core_commit() -> None:
     assert ai_native.TRUSTED_AI_REVIEW_GATE_REFS == frozenset(
-        {"7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5"}
+        {"70a27f1691c870f1f5423698b2864edd96fee98c"}
     )
 
 
@@ -34,3 +34,12 @@ def test_native_review_reuse_is_bound_to_current_base_event() -> None:
     body = gate.split("has_any_native_clear_codex_evidence() {", 1)[1].split("\n}", 1)[0]
     assert "is_current_base_native_review_submission" in body
     assert "has_any_native_matching_review" not in body
+
+
+def test_release_records_are_codeowner_governed() -> None:
+    codeowners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
+    validator = Path("validator/validate_standard.py").read_text(encoding="utf-8")
+    assert "/CHANGELOG.md @fatmambot33" in codeowners
+    assert "/RELEASE_NOTES.md @fatmambot33" in codeowners
+    assert '"CHANGELOG.md",' in validator
+    assert '"RELEASE_NOTES.md",' in validator
