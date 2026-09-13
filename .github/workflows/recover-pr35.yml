@@ -32,7 +32,8 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          old = "(github.event_name == 'pull_request' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_thread')"
+          event_guard = "(github.event_name == 'pull_request' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_thread')"
+          full_guard = event_guard + " && github.event.pull_request.draft == false"
           short = "github.event.pull_request.draft == false"
           for name in (
               ".github/workflows/codex-review.yml",
@@ -41,7 +42,8 @@ jobs:
               "tests/test_validation.py",
           ):
               path = Path(name)
-              text = path.read_text(encoding="utf-8").replace(old, short)
+              text = path.read_text(encoding="utf-8")
+              text = text.replace(full_guard, short).replace(event_guard, short)
               path.write_text(text, encoding="utf-8")
 
           path = Path("ai_native.py")
@@ -54,6 +56,12 @@ jobs:
           if needle not in text:
               raise RuntimeError("wait-event validator return expression not found")
           path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+
+          path = Path("actions/codex-review-gate/codex-review-gate.sh")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("else\n      local thread_status=$?", "else\n    local thread_status=$?", 1)
+          text = text.replace("else\n      thread_status=$?", "else\n    local thread_status=$?", 1)
+          path.write_text(text, encoding="utf-8")
           PY
           ruff format ai_native.py tests/test_ai_review_governance_hardening.py tests/test_ai_review_governance_remaining.py tests/test_validation.py
           git add -A
