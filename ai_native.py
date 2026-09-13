@@ -487,6 +487,8 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
     }
     if any(inputs.get(key) != value for key, value in required_inputs.items()):
         return None
+    if inputs.get("check-name") not in (None, ""):
+        return None
     for key in ("timeout-seconds", "poll-seconds"):
         if key in inputs and not _positive_integer_input(inputs[key]):
             return None
