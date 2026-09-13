@@ -407,6 +407,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         "validator/validate_standard.py",
         "templates/AI_NATIVE_PLATFORM.yaml",
         "docs/GOVERNANCE.md",
+        "docs/AI_REVIEW_GOVERNANCE.md",
         "pyproject.toml",
         "tools/release_artifacts.py",
     )
