@@ -95,8 +95,8 @@ text = replace_once(
 )
 text = replace_once(
     text,
-    'COMMENT_CREATED_AT=""\n',
-    'COMMENT_CREATED_AT=""\nSTATUS_STARTED="false"\nSTATUS_COMPLETED="false"\n',
+    'RUN_MARKER="<!-- ai-native-codex-review-run:${GITHUB_RUN_ID} -->"\nCOMMENT_ID=""\nCOMMENT_CREATED_AT=""\n',
+    'RUN_MARKER="<!-- ai-native-codex-review-run:${GITHUB_RUN_ID} -->"\nCOMMENT_ID=""\nCOMMENT_CREATED_AT=""\nSTATUS_STARTED="false"\nSTATUS_COMPLETED="false"\n',
     "status state",
 )
 text = replace_once(
