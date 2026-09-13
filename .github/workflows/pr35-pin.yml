@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install --disable-pip-version-check -e '.[dev]'
-      - name: Pin trusted gate in code and fixtures
+      - name: Pin trusted gate in code, workflow, and fixtures
         shell: bash
         run: |
           python - <<'PY'
@@ -34,6 +34,12 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit(f'ai_native trusted ref matches: {text.count(old)}')
           core.write_text(text.replace(old, target), encoding='utf-8')
+
+          workflow = Path('.github/workflows/codex-review.yml')
+          text = workflow.read_text(encoding='utf-8')
+          if text.count(old) != 2:
+              raise SystemExit(f'workflow gate pin matches: {text.count(old)}')
+          workflow.write_text(text.replace(old, target), encoding='utf-8')
 
           for path in Path('tests').glob('test_*.py'):
               text = path.read_text(encoding='utf-8')
