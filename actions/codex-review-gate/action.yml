@@ -3,7 +3,7 @@ description: Request or require Codex review evidence for a pull-request HEAD.
 
 inputs:
   token:
-    description: GitHub token. Request mode needs issues:write; reporting needs checks:write.
+    description: GitHub token. Request mode needs issues:write; PR-head status reporting needs statuses:write.
     required: true
   pr-number:
     description: Pull request number.
@@ -20,7 +20,7 @@ inputs:
     required: false
     default: wait
   check-name:
-    description: Optional check-run name to publish directly on the pull-request HEAD. Intended for trusted pull_request_target workflows with checks:write.
+    description: Optional commit-status context to publish directly on the pull-request HEAD. Intended for trusted pull_request_target workflows with statuses:write.
     required: false
     default: ""
   timeout-seconds:
