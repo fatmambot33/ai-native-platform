@@ -78,7 +78,7 @@ jobs:
           '''
           workflow.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
 
-          Path('tests/test_pr35_final_governance.py').write_text('''from pathlib import Path\n\nimport inspect\nimport ai_native\n\n\ndef test_canonical_gate_rejects_nonempty_check_name() -> None:\n    source = inspect.getsource(ai_native._gate_ref)\n    assert 'inputs.get("check-name") not in (None, "")' in source\n\n\ndef test_native_review_thread_status_is_captured_in_else_branch() -> None:\n    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")\n    segment = text.split("has_any_native_clear_codex_evidence()", 1)[1].split("has_native_clean_reaction()", 1)[0]\n    assert "else\\n    local thread_status=$?" in segment\n\n\ndef test_consumer_conformance_uses_release_candidate_cli() -> None:\n    text = Path(".github/workflows/consumer-conformance.yml").read_text(encoding="utf-8")\n    assert "Checkout release candidate" in text\n    assert "./release-candidate" in text\n    assert "Install pinned conformance CLI" not in text\n''', encoding='utf-8')
+          Path('tests/test_pr35_final_governance.py').write_text('''import inspect\nfrom pathlib import Path\n\nimport ai_native\n\n\ndef test_canonical_gate_rejects_nonempty_check_name() -> None:\n    source = inspect.getsource(ai_native._gate_ref)\n    assert 'inputs.get("check-name") not in (None, "")' in source\n\n\ndef test_native_review_thread_status_is_captured_in_else_branch() -> None:\n    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(\n        encoding="utf-8"\n    )\n    segment = text.split("has_any_native_clear_codex_evidence()", 1)[1]\n    segment = segment.split("has_native_clean_reaction()", 1)[0]\n    assert "else\\n    local thread_status=$?" in segment\n\n\ndef test_consumer_conformance_uses_release_candidate_cli() -> None:\n    text = Path(".github/workflows/consumer-conformance.yml").read_text(\n        encoding="utf-8"\n    )\n    assert "Checkout release candidate" in text\n    assert "./release-candidate" in text\n    assert "Install pinned conformance CLI" not in text\n''', encoding='utf-8')
 
           for name in ('pr35-finalize.yml', 'pr35-finalize2.yml', 'pr35-finalize3.yml'):
               temporary = Path('.github/workflows') / name
@@ -87,8 +87,6 @@ jobs:
           PY
       - name: Validate executable fixes
         run: |
-          ruff check --fix tests/test_pr35_final_governance.py
-          ruff format tests/test_pr35_final_governance.py
           ruff check .
           pytest
           python validator/validate_standard.py
@@ -127,7 +125,6 @@ jobs:
           PY
       - name: Validate final pinned tree
         run: |
-          ruff check --fix tests/test_pr35_final_governance.py
           ruff format tests/test_pr35_final_governance.py
           ruff check .
           pytest
