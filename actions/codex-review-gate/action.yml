@@ -15,7 +15,7 @@ inputs:
     description: Current pull request base SHA for exact revision binding.
     required: true
   review-context:
-    description: Optional context key for reusable callers; defaults to base-sha when omitted.
+    description: Optional context key; evidence is always bound to base-sha as well.
     required: false
     default: ""
   mode:
@@ -35,7 +35,7 @@ inputs:
     required: false
     default: "1800"
   poll-seconds:
-    description: Poll interval while waiting for Codex.
+    description: Poll interval while waiting for Codex; clamped to timeout-seconds at runtime.
     required: false
     default: "60"
 
@@ -56,4 +56,4 @@ runs:
         CODEX_REVIEW_CHECK_NAME: ${{ inputs.check-name }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
-      run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
+      run: bash "$GITHUB_ACTION_PATH/preflight.sh"
