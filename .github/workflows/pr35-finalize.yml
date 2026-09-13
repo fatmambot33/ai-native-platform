@@ -1,0 +1,185 @@
+name: Finalize PR35 governance fixes
+
+on:
+  push:
+    branches: [maintenance/pr35-finalize]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: maintenance/pr35-finalize
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install --disable-pip-version-check -e '.[dev]'
+      - name: Apply three executable fixes and regressions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          shell = Path('actions/codex-review-gate/codex-review-gate.sh')
+          text = shell.read_text(encoding='utf-8')
+          old = '''    if has_unresolved_codex_threads; then
+              echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+              return 1
+            fi
+            local thread_status=$?
+            if [[ "$thread_status" -eq 1 ]]; then
+              return 0
+            fi
+            echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+            return 1
+          '''
+          new = '''    if has_unresolved_codex_threads; then
+              echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+              return 1
+            else
+              local thread_status=$?
+              if [[ "$thread_status" -eq 1 ]]; then
+                return 0
+              fi
+              echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+              return 1
+            fi
+          '''
+          if old not in text:
+              raise SystemExit('native-review status block not found')
+          shell.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          core = Path('ai_native.py')
+          text = core.read_text(encoding='utf-8')
+          old = '''    if any(inputs.get(key) != value for key, value in required_inputs.items()):
+              return None
+            for key in ("timeout-seconds", "poll-seconds"):
+          '''
+          new = '''    if any(inputs.get(key) != value for key, value in required_inputs.items()):
+              return None
+            if inputs.get("check-name") not in (None, ""):
+              return None
+            for key in ("timeout-seconds", "poll-seconds"):
+          '''
+          if old not in text:
+              raise SystemExit('gate input validation block not found')
+          core.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          workflow = Path('.github/workflows/consumer-conformance.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = '''      - name: Checkout pinned standard
+                uses: actions/checkout@v4
+                with:
+                  ref: ${{ needs.registry.outputs.standard_ref }}
+                  path: pinned-standard
+              - uses: actions/setup-python@v5
+                with:
+                  python-version: '3.12'
+                  cache: pip
+              - name: Install pinned conformance CLI
+                run: python -m pip install --disable-pip-version-check ./pinned-standard
+          '''
+          new = '''      - name: Checkout release candidate
+                uses: actions/checkout@v4
+                with:
+                  path: release-candidate
+              - uses: actions/setup-python@v5
+                with:
+                  python-version: '3.12'
+                  cache: pip
+              - name: Install release-candidate conformance CLI
+                run: python -m pip install --disable-pip-version-check ./release-candidate
+          '''
+          if old not in text:
+              raise SystemExit('consumer CLI checkout block not found')
+          workflow.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('tests/test_pr35_final_governance.py')
+          tests.write_text('''from pathlib import Path\n\nimport ai_native\n\n\ndef _gate_job(mode: str, **inputs: str) -> dict:\n    values = {\n        "token": "${{ github.token }}",\n        "pr-number": "${{ github.event.pull_request.number }}",\n        "head-sha": "${{ github.event.pull_request.head.sha }}",\n        "base-sha": "${{ github.event.pull_request.base.sha }}",\n        "mode": mode,\n        "request-label": "codex:review",\n    }\n    values.update(inputs)\n    ref = next(iter(ai_native.TRUSTED_AI_REVIEW_GATE_REFS))\n    return {"steps": [{"uses": f"{ai_native.AI_REVIEW_ACTION}@{ref}", "with": values}]}\n\n\ndef test_canonical_gate_rejects_nonempty_check_name() -> None:\n    assert ai_native._gate_ref(_gate_job("wait", **{"check-name": "codex-review"}), "wait") is None\n    assert ai_native._gate_ref(_gate_job("request", **{"check-name": "custom"}), "request") is None\n\n\ndef test_native_review_thread_status_is_captured_in_else_branch() -> None:\n    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")\n    segment = text.split("has_native_clear_codex_evidence()", 1)[1].split("has_clear_codex_evidence()", 1)[0]\n    assert "else\\n      local thread_status=$?" in segment\n\n\ndef test_consumer_conformance_uses_release_candidate_cli() -> None:\n    text = Path(".github/workflows/consumer-conformance.yml").read_text(encoding="utf-8")\n    assert "Checkout release candidate" in text\n    assert "./release-candidate" in text\n    assert "Install pinned conformance CLI" not in text\n''', encoding='utf-8')
+
+          Path('.github/workflows/pr35-finalize.yml').unlink()
+          PY
+      - name: Validate executable fixes
+        run: |
+          ruff check .
+          pytest
+          python validator/validate_standard.py
+          python tools/discover_improvements.py --budget 20 > improvement-findings.json
+          python - <<'PY'
+          import json
+          findings = json.load(open('improvement-findings.json', encoding='utf-8'))
+          if findings:
+              raise SystemExit(json.dumps(findings, indent=2))
+          PY
+          python -m build
+          python tools/release_artifacts.py dist
+          test -s dist/SHA256SUMS
+          test -s dist/sbom.spdx.json
+          test -s dist/provenance.json
+          git diff --check
+      - name: Commit executable fixes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: close final Codex governance gaps'
+          echo "INTERMEDIATE=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Pin tested immutable gate revision
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          sha = os.environ['INTERMEDIATE']
+          old = '48f0c6c4351a040f3214ef01e036b5f00032b2cd'
+
+          workflow = Path('.github/workflows/codex-review.yml')
+          text = workflow.read_text(encoding='utf-8')
+          if text.count(old) != 2:
+              raise SystemExit('expected exactly two canonical gate pins')
+          workflow.write_text(text.replace(old, sha), encoding='utf-8')
+
+          core = Path('ai_native.py')
+          text = core.read_text(encoding='utf-8')
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one trusted gate ref')
+          core.write_text(text.replace(old, sha), encoding='utf-8')
+
+          tests = Path('tests/test_pr35_final_governance.py')
+          with tests.open('a', encoding='utf-8') as handle:
+              handle.write(f'''\n\ndef test_canonical_workflow_pin_matches_trusted_gate() -> None:\n    expected = "{sha}"\n    text = Path(".github/workflows/codex-review.yml").read_text(encoding="utf-8")\n    assert ai_native.TRUSTED_AI_REVIEW_GATE_REFS == frozenset({{expected}})\n    assert text.count(f"@{{expected}}") == 2\n''')
+          PY
+      - name: Validate final pinned tree
+        run: |
+          ruff check .
+          pytest
+          python validator/validate_standard.py
+          python tools/discover_improvements.py --budget 20 > improvement-findings.json
+          python - <<'PY'
+          import json
+          findings = json.load(open('improvement-findings.json', encoding='utf-8'))
+          if findings:
+              raise SystemExit(json.dumps(findings, indent=2))
+          PY
+          rm -rf dist build *.egg-info
+          python -m build
+          python tools/release_artifacts.py dist
+          test -s dist/SHA256SUMS
+          test -s dist/sbom.spdx.json
+          test -s dist/provenance.json
+          git diff --check
+      - name: Commit pin and push staging branch
+        shell: bash
+        run: |
+          git add -A
+          git commit -m 'chore: pin finalized Codex gate revision'
+          git push origin HEAD:maintenance/pr35-finalize
