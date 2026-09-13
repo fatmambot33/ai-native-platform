@@ -14,7 +14,7 @@ from ai_native import (
     template_path,
 )
 
-GATE_REF = "48f0c6c4351a040f3214ef01e036b5f00032b2cd"
+GATE_REF = "02d16e85b80b8631fdca011a6a73e7c703d1d507"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WORKFLOW = f"""name: Codex review governance
 on:
