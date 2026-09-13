@@ -203,3 +203,25 @@ def test_codex_review_gate_shell_syntax() -> None:
     import subprocess
 
     subprocess.run(["bash", "-n", str(GATE)], check=True)
+
+
+
+def test_gate_removes_unverifiable_collaborator_bootstrap() -> None:
+    source = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+    block = source.split("find_trigger_comment() {", 1)[1].split("}\n", 1)[0]
+    assert "find_bot_trigger_comment" in block
+    assert "find_bootstrap_trigger_comment" not in block
+
+
+def test_dismissed_review_invalidates_clean_request_reaction() -> None:
+    source = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+    block = source.split("has_trigger_clean_reaction() {", 1)[1].split("\n}\n", 1)[0]
+    assert "has_dismissed_matching_review" in block
+    assert block.index("has_dismissed_matching_review") < block.index("reactions=")
+
+
+def test_gate_reuses_late_native_review_before_fallback_request() -> None:
+    source = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+    block = source.split("request_review() {", 1)[1].split("\n}\n", 1)[0]
+    assert "has_any_native_clear_codex_evidence" in block
+    assert block.index("has_any_native_clear_codex_evidence") < block.index("gh api --method POST")

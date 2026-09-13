@@ -273,3 +273,24 @@ def test_review_gate_checks_every_existing_workflow_owner(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     assert any("bypass.yml" in item.message for item in _findings(tmp_path))
+
+
+
+def test_review_gate_requires_matching_review_contexts(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "          mode: request\n",
+        "          mode: request\n          review-context: request-only\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("same review-context" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_accepts_matching_review_contexts(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "          request-label: codex:review\n",
+        "          request-label: codex:review\n          review-context: shared\n",
+        2,
+    )
+    _write_repository(tmp_path, workflow)
+    assert not _findings(tmp_path)

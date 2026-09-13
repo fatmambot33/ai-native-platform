@@ -497,6 +497,22 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
     return uses[len(prefix) :]
 
 
+def _gate_optional_input(job: Mapping[str, Any], key: str) -> Any:
+    """Return one optional canonical gate input, normalizing omission to empty."""
+    steps = job.get("steps", [])
+    if (
+        not isinstance(steps, Sequence)
+        or isinstance(steps, (str, bytes))
+        or len(steps) != 1
+        or not isinstance(steps[0], Mapping)
+    ):
+        return ""
+    inputs = steps[0].get("with", {})
+    if not isinstance(inputs, Mapping):
+        return ""
+    return inputs.get(key, "")
+
+
 def _permission_declaration_is_forbidden(value: Any) -> bool:
     """Return whether one permissions declaration grants spoofable write APIs."""
     if isinstance(value, str):
@@ -835,6 +851,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"{label} job uses an untrusted gate revision {reference}")
     if request_ref is not None and wait_ref is not None and request_ref != wait_ref:
         failures.append("request and wait jobs must pin the same gate revision")
+    if _gate_optional_input(request, "review-context") != _gate_optional_input(
+        wait, "review-context"
+    ):
+        failures.append("request and wait jobs must use the same review-context")
 
     if _has_forbidden_write_permissions(workflow):
         failures.append("workflow must not grant statuses/checks write or write-all permissions")

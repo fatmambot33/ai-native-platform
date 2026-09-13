@@ -411,6 +411,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         "consumers/registry.yaml",
         "docs/GOVERNANCE.md",
         "docs/AI_REVIEW_GOVERNANCE.md",
+        "AGENTS.md",
         "pyproject.toml",
         "tools/release_artifacts.py",
     )

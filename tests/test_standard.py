@@ -133,3 +133,19 @@ def test_release_workflow_is_idempotent_verifiable_and_prerelease() -> None:
         "--verify-tag",
     ):
         assert token in workflow
+
+
+
+def test_branch_freshness_is_scoped_to_ai_review() -> None:
+    standard = yaml.safe_load(
+        (ROOT / "standard/AI_NATIVE_PLATFORM.yaml").read_text(encoding="utf-8")
+    )
+    assert "branch_up_to_date" not in standard["release_gates"]
+    assert "branch_up_to_date" in standard["governance"]["ai_review"]["release_gates"]
+
+
+def test_root_agent_policy_is_codeowner_protected() -> None:
+    codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    validator = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+    assert "/AGENTS.md @fatmambot33" in codeowners
+    assert '"AGENTS.md",' in validator

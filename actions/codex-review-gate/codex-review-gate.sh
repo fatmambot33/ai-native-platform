@@ -313,9 +313,6 @@ find_trigger_comment() {
   COMMENT_ID=""
   COMMENT_CREATED_AT=""
   find_bot_trigger_comment
-  if [[ -z "$COMMENT_ID" ]]; then
-    find_bootstrap_trigger_comment
-  fi
 }
 
 codex_failure_after() {
@@ -359,6 +356,9 @@ has_trigger_clean_reaction() {
     return 2
   fi
   [[ -n "$COMMENT_ID" ]] || return 1
+  if has_dismissed_matching_review; then
+    return 1
+  fi
   local reactions
   reactions="$(api_list "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions?per_page=100")"
   jq -e \
@@ -376,6 +376,31 @@ has_native_matching_review() {
     --arg since "$since" \
     "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
     <<<"$reviews" >/dev/null
+}
+
+has_any_native_matching_review() {
+  local reviews
+  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+  jq -e \
+    --arg head "$HEAD_SHA" \
+    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
+    <<<"$reviews" >/dev/null
+}
+
+has_any_native_clear_codex_evidence() {
+  if ! has_any_native_matching_review; then
+    return 1
+  fi
+  if has_unresolved_codex_threads; then
+    echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+    return 1
+  fi
+  local thread_status=$?
+  if [[ "$thread_status" -eq 1 ]]; then
+    return 0
+  fi
+  echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+  return 1
 }
 
 has_native_clean_reaction() {
@@ -424,6 +449,10 @@ has_clear_codex_evidence() {
 }
 
 request_review() {
+  if has_any_native_clear_codex_evidence; then
+    echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}; no fallback request needed."
+    return 0
+  fi
   find_bot_trigger_comment
   if [[ -n "$COMMENT_ID" ]]; then
     if has_dismissed_matching_review; then
@@ -517,6 +546,12 @@ esac
 
 if has_clear_codex_evidence; then
   echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
+  complete_status success
+  exit 0
+fi
+
+if has_any_native_clear_codex_evidence; then
+  echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}."
   complete_status success
   exit 0
 fi
