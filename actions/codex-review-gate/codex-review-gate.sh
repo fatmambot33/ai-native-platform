@@ -394,13 +394,14 @@ has_any_native_clear_codex_evidence() {
   if has_unresolved_codex_threads; then
     echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
     return 1
+  else
+    local thread_status=$?
+    if [[ "$thread_status" -eq 1 ]]; then
+      return 0
+    fi
+    echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+    return 1
   fi
-  local thread_status=$?
-  if [[ "$thread_status" -eq 1 ]]; then
-    return 0
-  fi
-  echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
-  return 1
 }
 
 has_native_clean_reaction() {
