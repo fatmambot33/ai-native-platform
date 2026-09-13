@@ -101,13 +101,13 @@ def test_trusted_mode_reports_check_on_pr_head(tmp_path: Path) -> None:
         """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_TEST_LOG"
-if [[ "$*" == *'/check-runs' && "$*" == *'--method POST'* ]]; then
+if [[ "$*" == *'repos/owner/repo/check-runs '* && "$*" == *'--method POST'* ]]; then
   printf '%s\\n' '{"id":777}'
 elif [[ "$*" == *'/pulls/42/reviews?per_page=100'* ]]; then
   exit 0
 elif [[ "$*" == *'/issues/42/comments?per_page=100'* ]]; then
   exit 0
-elif [[ "$*" == *'/issues/42/comments' && "$*" == *'--method POST'* ]]; then
+elif [[ "$*" == *'/issues/42/comments '* && "$*" == *'--method POST'* ]]; then
   printf '%s\\n' '{"id":123,"created_at":"2026-09-13T08:00:00Z"}'
 elif [[ "$*" == *'/issues/comments/123/reactions?per_page=100'* ]]; then
   cat <<'JSON'
@@ -116,7 +116,7 @@ elif [[ "$*" == *'/issues/comments/123/reactions?per_page=100'* ]]; then
   "content": "+1"
 }
 JSON
-elif [[ "$*" == *'/check-runs/777' && "$*" == *'--method PATCH'* ]]; then
+elif [[ "$*" == *'/check-runs/777 '* && "$*" == *'--method PATCH'* ]]; then
   printf '%s\\n' '{"id":777,"status":"completed","conclusion":"success"}'
 else
   exit 0
