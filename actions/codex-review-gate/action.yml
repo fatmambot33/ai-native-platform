@@ -3,7 +3,7 @@ description: Request or require current-HEAD Codex review evidence while conserv
 
 inputs:
   token:
-    description: GitHub token. Request mode needs issues:write; wait mode needs read permissions only.
+    description: GitHub token. Request mode needs issues:write; PR-head status reporting needs statuses:write.
     required: true
   pr-number:
     description: Pull request number.
@@ -12,16 +12,25 @@ inputs:
     description: Current pull request HEAD SHA.
     required: true
   base-sha:
-    description: Current pull request base SHA.
-    required: true
+    description: Current pull request base SHA for exact revision binding.
+    required: false
+    default: ""
+  review-context:
+    description: Optional context key for reusable callers; defaults to base-sha when omitted.
+    required: false
+    default: ""
   mode:
-    description: Either request or wait.
+    description: One of request, wait, or request-and-wait.
     required: false
     default: wait
   request-label:
     description: One-shot label authorizing a quota-consuming Codex review request.
     required: false
     default: "codex:review"
+  check-name:
+    description: Optional commit-status context to publish directly on the pull-request HEAD. Intended for trusted workflows with statuses:write.
+    required: false
+    default: ""
   timeout-seconds:
     description: Maximum time to wait for Codex.
     required: false
@@ -42,8 +51,10 @@ runs:
         PR_NUMBER: ${{ inputs.pr-number }}
         HEAD_SHA: ${{ inputs.head-sha }}
         BASE_SHA: ${{ inputs.base-sha }}
+        CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}
         CODEX_REVIEW_MODE: ${{ inputs.mode }}
         CODEX_REVIEW_REQUEST_LABEL: ${{ inputs.request-label }}
+        CODEX_REVIEW_CHECK_NAME: ${{ inputs.check-name }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
       run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"

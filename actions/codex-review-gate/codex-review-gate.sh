@@ -5,21 +5,26 @@ set -euo pipefail
 : "${REPO:?REPO is required}"
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
-: "${BASE_SHA:?BASE_SHA is required}"
+BASE_SHA="${BASE_SHA:-}"
+REVIEW_CONTEXT="${CODEX_REVIEW_CONTEXT:-${BASE_SHA}}"
+: "${REVIEW_CONTEXT:?BASE_SHA or CODEX_REVIEW_CONTEXT is required}"
 : "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
 : "${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}"
 : "${GITHUB_EVENT_NAME:?GITHUB_EVENT_NAME is required}"
 : "${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH is required}"
 
 MODE="${CODEX_REVIEW_MODE:-wait}"
+CHECK_NAME="${CODEX_REVIEW_CHECK_NAME:-}"
 TIMEOUT_SECONDS="${CODEX_REVIEW_TIMEOUT_SECONDS:-1800}"
 POLL_SECONDS="${CODEX_REVIEW_POLL_SECONDS:-60}"
 REQUEST_LABEL="${CODEX_REVIEW_REQUEST_LABEL:-codex:review}"
 SHORT_SHA="${HEAD_SHA:0:10}"
-MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA}:${BASE_SHA} -->"
+MARKER="<!-- ai-native-codex-review-gate:${HEAD_SHA}:${REVIEW_CONTEXT} -->"
 RUN_MARKER="<!-- ai-native-codex-review-run:${GITHUB_RUN_ID} -->"
 COMMENT_ID=""
 COMMENT_CREATED_AT=""
+STATUS_STARTED="false"
+STATUS_COMPLETED="false"
 OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
 WORKFLOW_PATH="${GITHUB_WORKFLOW_REF#${REPO}/}"
@@ -36,6 +41,38 @@ api_list() {
     "$endpoint" \
     --jq '.[]' | jq -s '.'
 }
+
+publish_status() {
+  local state="$1"
+  [[ -n "$CHECK_NAME" ]] || return 0
+  gh api --method POST \
+    -H "Accept: application/vnd.github+json" \
+    "repos/${REPO}/statuses/${HEAD_SHA}" \
+    -f state="$state" \
+    -f context="$CHECK_NAME" \
+    -f description="Codex review gate: ${state}" >/dev/null
+}
+
+start_status() {
+  [[ -n "$CHECK_NAME" ]] || return 0
+  publish_status pending
+  STATUS_STARTED="true"
+}
+
+complete_status() {
+  local state="$1"
+  [[ "$STATUS_STARTED" == "true" ]] || return 0
+  publish_status "$state"
+  STATUS_COMPLETED="true"
+}
+
+on_exit() {
+  local status=$?
+  if [[ "$status" -ne 0 && "$STATUS_STARTED" == "true" && "$STATUS_COMPLETED" != "true" ]]; then
+    complete_status failure || true
+  fi
+}
+trap on_exit EXIT
 
 is_request_label_event() {
   [[ "$GITHUB_EVENT_NAME" == "pull_request_target" \
@@ -204,7 +241,7 @@ trusted_request_run() {
      and .event == "pull_request_target"
      and .path == $workflow_path
      and ((.created_at // "") <= $created_at)
-     and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head and (.base.sha // "") == $base)' \
+     and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head and ($base == "" or (.base.sha // "") == $base))' \
     <<<"$run" >/dev/null
 }
 
@@ -421,17 +458,35 @@ case "$MODE" in
   request)
     if ! is_request_label_event; then
       echo "Codex review request skipped. Apply ${REQUEST_LABEL} only when the PR is merge-ready."
-      exit 0
+      complete_status success
+    complete_status success
+  exit 0
     fi
     trap clear_request_label EXIT
     if has_matching_review; then
       echo "Codex already reviewed current HEAD ${SHORT_SHA}."
-      exit 0
+      complete_status success
+    complete_status success
+  exit 0
     fi
     request_review
-    exit 0
+    complete_status success
+    complete_status success
+  exit 0
     ;;
   wait)
+    start_status
+    ;;
+  request-and-wait)
+    start_status
+    if has_clear_codex_evidence; then
+      echo "Codex already reviewed current HEAD ${SHORT_SHA} for this review context."
+      complete_status success
+      complete_status success
+    complete_status success
+  exit 0
+    fi
+    request_review
     ;;
   *)
     echo "::error::Unknown Codex review gate mode: ${MODE}."
@@ -441,6 +496,7 @@ esac
 
 if has_clear_codex_evidence; then
   echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
+  complete_status success
   exit 0
 fi
 
@@ -451,7 +507,9 @@ if is_native_review_event; then
   while (( SECONDS < deadline )); do
     if has_native_clear_codex_evidence "$request_started_at"; then
       echo "Native Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
-      exit 0
+      complete_status success
+    complete_status success
+  exit 0
     fi
     if codex_failure_after "$request_started_at"; then
       exit 1
@@ -480,7 +538,9 @@ deadline=$((SECONDS + TIMEOUT_SECONDS))
 while (( SECONDS < deadline )); do
   if has_clear_codex_evidence; then
     echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
-    exit 0
+    complete_status success
+    complete_status success
+  exit 0
   fi
   if codex_failure_after "$request_started_at"; then
     exit 1
