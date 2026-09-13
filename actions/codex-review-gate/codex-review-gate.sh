@@ -19,8 +19,8 @@ else
 fi
 COMMENT_ID=""
 COMMENT_CREATED_AT=""
-CHECK_RUN_ID=""
-CHECK_COMPLETED="false"
+STATUS_STARTED="false"
+STATUS_COMPLETED="false"
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -32,39 +32,34 @@ api_list() {
     --jq '.[]' | jq -s '.'
 }
 
-start_check() {
+publish_status() {
+  local state="$1"
   [[ -n "$CHECK_NAME" ]] || return 0
-  local response
-  response="$(
-    gh api --method POST \
-      -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/check-runs" \
-      -f name="$CHECK_NAME" \
-      -f head_sha="$HEAD_SHA" \
-      -f status="in_progress"
-  )"
-  CHECK_RUN_ID="$(jq -r '.id // empty' <<<"$response")"
-  [[ -n "$CHECK_RUN_ID" ]] || {
-    echo "::error::GitHub did not return a check-run id for ${CHECK_NAME}."
-    exit 1
-  }
+  gh api --method POST \
+    -H "Accept: application/vnd.github+json" \
+    "repos/${REPO}/statuses/${HEAD_SHA}" \
+    -f state="$state" \
+    -f context="$CHECK_NAME" \
+    -f description="Codex review gate: ${state}" >/dev/null
 }
 
-complete_check() {
-  local conclusion="$1"
-  [[ -n "$CHECK_RUN_ID" ]] || return 0
-  gh api --method PATCH \
-    -H "Accept: application/vnd.github+json" \
-    "repos/${REPO}/check-runs/${CHECK_RUN_ID}" \
-    -f status="completed" \
-    -f conclusion="$conclusion" >/dev/null
-  CHECK_COMPLETED="true"
+start_status() {
+  [[ -n "$CHECK_NAME" ]] || return 0
+  publish_status pending
+  STATUS_STARTED="true"
+}
+
+complete_status() {
+  local state="$1"
+  [[ "$STATUS_STARTED" == "true" ]] || return 0
+  publish_status "$state"
+  STATUS_COMPLETED="true"
 }
 
 on_exit() {
   local status=$?
-  if [[ "$status" -ne 0 && -n "$CHECK_RUN_ID" && "$CHECK_COMPLETED" != "true" ]]; then
-    complete_check failure || true
+  if [[ "$status" -ne 0 && "$STATUS_STARTED" == "true" && "$STATUS_COMPLETED" != "true" ]]; then
+    complete_status failure || true
   fi
 }
 trap on_exit EXIT
@@ -173,23 +168,23 @@ case "$MODE" in
     exit 0
     ;;
   wait)
-    start_check
+    start_status
     if wait_for_review; then
-      complete_check success
+      complete_status success
       exit 0
     fi
     exit 1
     ;;
   request-and-wait)
-    start_check
+    start_status
     if has_matching_review; then
       echo "Codex already reviewed current HEAD ${SHORT_SHA} for this review context."
-      complete_check success
+      complete_status success
       exit 0
     fi
     request_review
     if wait_for_review; then
-      complete_check success
+      complete_status success
       exit 0
     fi
     exit 1
