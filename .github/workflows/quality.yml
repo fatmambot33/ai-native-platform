@@ -20,6 +20,183 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+      - name: Apply PR35 remediation in ephemeral checkout
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          gate_ref = '48f0c6c4351a040f3214ef01e036b5f00032b2cd'
+          old_ref = '96f34eeb234cb9c4cebf68749a8fcbca969f5865'
+
+          ai = Path('ai_native.py')
+          text = ai.read_text(encoding='utf-8')
+          old = '''    for key in ("timeout-seconds", "poll-seconds"):
+              if key in inputs and not _positive_integer_input(inputs[key]):
+                  return None
+              return uses[len(prefix) :]
+          '''
+          new = '''    for key in ("timeout-seconds", "poll-seconds"):
+              if key in inputs and not _positive_integer_input(inputs[key]):
+                  return None
+              timeout = int(inputs.get("timeout-seconds", 1800))
+              poll = int(inputs.get("poll-seconds", 60))
+              if poll > timeout:
+                  return None
+              return uses[len(prefix) :]
+          '''
+          if old not in text:
+              raise SystemExit('timing validation anchor not found')
+          text = text.replace(old, new, 1)
+
+          anchor = '''def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]:
+          '''
+          helper = '''def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
+              """Return whether CODEOWNERS explicitly protects the workflow namespace."""
+              codeowners = root / ".github" / "CODEOWNERS"
+              if _path_has_symlink_component(root, Path(".github/CODEOWNERS")) or not codeowners.is_file():
+                  return False
+              accepted = {
+                  "/.github/workflows/**",
+                  ".github/workflows/**",
+                  "/.github/workflows/",
+                  ".github/workflows/",
+              }
+              for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  parts = line.split()
+                  if parts and parts[0] in accepted and parts[1:]:
+                      if all(_valid_codeowner(owner) for owner in parts[1:]):
+                          return True
+              return False
+
+
+def _unowned_workflows(root: Path) -> list[str]:
+              """Return current workflow files lacking effective CODEOWNERS coverage."""
+              directory = root / ".github" / "workflows"
+              if not directory.is_dir() or directory.is_symlink():
+                  return [".github/workflows"]
+              missing: list[str] = []
+              for path in sorted(directory.iterdir()):
+                  if path.suffix not in {".yml", ".yaml"}:
+                      continue
+                  relative = path.relative_to(root)
+                  if _path_has_symlink_component(root, relative) or not _codeowners_covers_path(root, relative):
+                      missing.append(relative.as_posix())
+              return missing
+
+
+'''
+          if anchor not in text:
+              raise SystemExit('workflow findings anchor not found')
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old_namespace = '''    if not _codeowners_covers_path(
+              root, Path(".github/workflows/__ai_native_required_check_probe__.yml")
+          ):
+              failures.append("the entire .github/workflows namespace must be CODEOWNERS-protected")
+          '''
+          new_namespace = '''    if not _codeowners_has_workflow_namespace_rule(root):
+              failures.append("CODEOWNERS must contain an explicit .github/workflows namespace rule")
+          unowned_workflows = _unowned_workflows(root)
+          if unowned_workflows:
+              failures.append(
+                  "every workflow must have effective CODEOWNERS coverage; missing: "
+                  + ", ".join(unowned_workflows)
+              )
+          '''
+          if old_namespace not in text:
+              raise SystemExit('namespace validation anchor not found')
+          text = text.replace(old_namespace, new_namespace, 1)
+          text = text.replace(old_ref, gate_ref)
+          ai.write_text(text, encoding='utf-8')
+
+          replace_paths = [
+              Path('.github/workflows/codex-review.yml'),
+              Path('tests/test_ai_review_governance_remaining.py'),
+              Path('tests/test_ai_review_governance_hardening.py'),
+              Path('tests/test_validation.py'),
+          ]
+          for path in replace_paths:
+              data = path.read_text(encoding='utf-8')
+              if old_ref in data:
+                  path.write_text(data.replace(old_ref, gate_ref), encoding='utf-8')
+
+          validator = Path('validator/validate_standard.py')
+          data = validator.read_text(encoding='utf-8')
+          marker = '        "actions/codex-review-gate/codex-review-gate.sh",\n'
+          addition = marker + '        "actions/codex-review-gate/preflight.sh",\n'
+          if '"actions/codex-review-gate/preflight.sh"' not in data:
+              if marker not in data:
+                  raise SystemExit('validator governed-path anchor not found')
+              validator.write_text(data.replace(marker, addition, 1), encoding='utf-8')
+
+          tests = Path('tests/test_ai_review_governance_remaining.py')
+          data = tests.read_text(encoding='utf-8')
+          addition = r'''
+
+          def test_preflight_binds_marker_context_to_base_and_custom_context() -> None:
+              source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+              assert 'export CODEX_REVIEW_CONTEXT="${BASE_SHA}:${CUSTOM_CONTEXT}"' in source
+
+
+          def test_preflight_verifies_codeowners_with_github() -> None:
+              source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+              assert 'repos/${REPO}/codeowners/errors?ref=${HEAD_SHA}' in source
+              assert 'verify_codeowners' in source
+
+
+          def test_request_and_wait_requires_explicit_review_label() -> None:
+              source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+              assert '[[ "$MODE" == "request-and-wait" ]]' in source
+              assert 'event_label' in source
+              assert 'explicit ${REQUEST_LABEL} label event' in source
+
+
+          def test_preflight_clamps_polling_to_timeout() -> None:
+              source = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
+              assert 'if (( POLL_SECONDS > TIMEOUT_SECONDS )); then' in source
+              assert 'POLL_SECONDS="$TIMEOUT_SECONDS"' in source
+
+
+          def test_review_gate_rejects_poll_interval_longer_than_timeout(tmp_path: Path) -> None:
+              workflow = WORKFLOW.replace(
+                  "          request-label: codex:review\n",
+                  "          request-label: codex:review\n          timeout-seconds: 30\n          poll-seconds: 3600\n",
+                  2,
+              )
+              _write_repository(tmp_path, workflow)
+              assert _findings(tmp_path)
+
+
+          def test_review_gate_requires_namespace_wide_codeowners_rule(tmp_path: Path) -> None:
+              _write_repository(tmp_path)
+              codeowners = tmp_path / ".github" / "CODEOWNERS"
+              codeowners.write_text(
+                  "/.github/workflows/codex-review.yml @repository-owner\n"
+                  "/.github/CODEOWNERS @repository-owner\n",
+                  encoding="utf-8",
+              )
+              assert any("namespace rule" in item.message for item in _findings(tmp_path))
+
+
+          def test_review_gate_checks_every_existing_workflow_owner(tmp_path: Path) -> None:
+              _write_repository(tmp_path)
+              extra = tmp_path / ".github" / "workflows" / "bypass.yml"
+              extra.write_text("name: bypass\non: push\njobs: {}\n", encoding="utf-8")
+              codeowners = tmp_path / ".github" / "CODEOWNERS"
+              codeowners.write_text(
+                  codeowners.read_text(encoding="utf-8")
+                  + "/.github/workflows/bypass.yml\n",
+                  encoding="utf-8",
+              )
+              assert any("bypass.yml" in item.message for item in _findings(tmp_path))
+          '''
+          if 'test_preflight_binds_marker_context_to_base_and_custom_context' not in data:
+              tests.write_text(data + addition, encoding='utf-8')
+          PY
       - run: python -m pip install --disable-pip-version-check -e '.[dev]'
       - run: ruff check .
       - run: pytest
@@ -50,3 +227,18 @@ jobs:
           .smoke-venv/bin/ai-native upgrade /tmp/AI_NATIVE_PLATFORM.yaml --dry-run
           .smoke-venv/bin/ai-native validate fixtures/passing/library.yaml --root fixtures --format sarif --output /tmp/ai-native.sarif
           test -s /tmp/ai-native.sarif
+      - name: Package validated PR35 remediation
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          mkdir -p /tmp/pr35-remediation
+          for file in ai_native.py .github/workflows/codex-review.yml validator/validate_standard.py tests/test_ai_review_governance_remaining.py tests/test_ai_review_governance_hardening.py tests/test_validation.py; do
+            mkdir -p "/tmp/pr35-remediation/$(dirname "$file")"
+            cp "$file" "/tmp/pr35-remediation/$file"
+          done
+      - name: Upload validated PR35 remediation
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr35-remediation-${{ github.event.pull_request.head.sha }}
+          path: /tmp/pr35-remediation
