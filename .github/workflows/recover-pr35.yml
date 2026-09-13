@@ -5,7 +5,6 @@ on:
     types: [synchronize]
     paths:
       - .github/workflows/recover-pr35.yml
-      - .github/scripts/recover_pr35.py
 
 permissions:
   contents: write
@@ -73,5 +72,14 @@ jobs:
           python validator/validate_standard.py
           bash -n actions/codex-review-gate/codex-review-gate.sh
           git diff --check HEAD~2..HEAD
-      - name: Push recovered commits
-        run: git push origin HEAD:align/codex-governance
+      - name: Prepare non-workflow publication
+        run: |
+          CORE_SHA="$(git rev-parse HEAD~1)"
+          git checkout "$CORE_SHA" -- .github/workflows/codex-review.yml .github/workflows/recover-pr35.yml
+          git add .github/workflows/codex-review.yml .github/workflows/recover-pr35.yml
+          git commit --amend --no-edit
+          echo "CORE_SHA=$CORE_SHA" >> "$GITHUB_ENV"
+      - name: Push validated non-workflow commits
+        run: |
+          git push origin "$CORE_SHA":align/codex-governance
+          git push origin HEAD:align/codex-governance
