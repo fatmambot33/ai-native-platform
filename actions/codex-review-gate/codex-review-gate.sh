@@ -114,27 +114,51 @@ clear_request_label() {
 }
 
 has_matching_review() {
-  local reviews
-  find_trigger_comment
+  local reviews status
+  if ! find_trigger_comment; then
+    return 2
+  fi
   [[ -n "$COMMENT_ID" && -n "$COMMENT_CREATED_AT" ]] || return 1
-  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
-  jq -e \
+  if ! reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"; then
+    echo "::error::Unable to query Codex reviews for marker-backed evidence."
+    return 2
+  fi
+  if jq -e \
     --arg head "$HEAD_SHA" \
     --arg since "$COMMENT_CREATED_AT" \
     "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
-    <<<"$reviews" >/dev/null
+    <<<"$reviews" >/dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "$status" -eq 1 ]] && return 1
+  echo "::error::Unable to evaluate Codex review evidence."
+  return 2
 }
 
 has_dismissed_matching_review() {
-  local reviews
-  find_trigger_comment
+  local reviews status
+  if ! find_trigger_comment; then
+    return 2
+  fi
   [[ -n "$COMMENT_ID" && -n "$COMMENT_CREATED_AT" ]] || return 1
-  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
-  jq -e \
+  if ! reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"; then
+    echo "::error::Unable to query dismissed Codex reviews."
+    return 2
+  fi
+  if jq -e \
     --arg head "$HEAD_SHA" \
     --arg since "$COMMENT_CREATED_AT" \
     "any(.[]; (${is_codex_login}) and ((.state // \"\") == \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
-    <<<"$reviews" >/dev/null
+    <<<"$reviews" >/dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "$status" -eq 1 ]] && return 1
+  echo "::error::Unable to evaluate dismissed Codex review evidence."
+  return 2
 }
 
 has_unresolved_codex_threads() {
@@ -230,6 +254,95 @@ current_run_created_at() {
     return 2
   }
 }
+
+revision_runs() {
+  local workflow_id runs
+  if ! workflow_id="$(current_workflow_id)"; then
+    return 2
+  fi
+  if ! runs="$(
+    gh api --paginate \
+      -H "Accept: application/vnd.github+json" \
+      "repos/${REPO}/actions/workflows/${workflow_id}/runs?per_page=100" \
+      --jq '.workflow_runs[]' | jq -s '.'
+  )"; then
+    echo "::error::Unable to query governance workflow runs for the current revision."
+    return 2
+  fi
+  printf '%s\n' "$runs"
+}
+
+revision_activation_created_at() {
+  local runs created_at
+  if ! runs="$(revision_runs)"; then
+    return 2
+  fi
+  created_at="$(jq -r \
+    --arg workflow_path "$WORKFLOW_PATH" \
+    --arg head "$HEAD_SHA" \
+    --arg base "$BASE_SHA" \
+    --argjson pr "$PR_NUMBER" \
+    '[.[] | select(
+      .path == $workflow_path
+      and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head and (.base.sha // "") == $base)
+    ) | (.created_at // empty)] | min // ""' \
+    <<<"$runs")"
+  [[ -n "$created_at" ]] || return 1
+  printf '%s\n' "$created_at"
+}
+
+has_trusted_native_review_run() {
+  local runs status
+  if ! runs="$(revision_runs)"; then
+    return 2
+  fi
+  if jq -e \
+    --arg workflow_path "$WORKFLOW_PATH" \
+    --arg head "$HEAD_SHA" \
+    --arg base "$BASE_SHA" \
+    --argjson pr "$PR_NUMBER" \
+    'any(.[];
+      .path == $workflow_path
+      and .event == "pull_request_review"
+      and (
+        (.actor.login // "") == "chatgpt-codex-connector"
+        or (.actor.login // "") == "chatgpt-codex-connector[bot]"
+      )
+      and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head and (.base.sha // "") == $base)
+    )' \
+    <<<"$runs" >/dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "$status" -eq 1 ]] && return 1
+  return 2
+}
+
+has_single_base_for_head() {
+  local runs status
+  if ! runs="$(revision_runs)"; then
+    return 2
+  fi
+  if jq -e \
+    --arg workflow_path "$WORKFLOW_PATH" \
+    --arg head "$HEAD_SHA" \
+    --arg base "$BASE_SHA" \
+    --argjson pr "$PR_NUMBER" \
+    '[.[] | select(
+      .path == $workflow_path
+      and any(.pull_requests[]?; .number == $pr and (.head.sha // "") == $head)
+    ) | [.pull_requests[]? | select(.number == $pr and (.head.sha // "") == $head) | (.base.sha // "")]]
+    | flatten | unique == [$base]' \
+    <<<"$runs" >/dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "$status" -eq 1 ]] && return 1
+  return 2
+}
+
 
 trusted_request_run() {
   local run_id="$1"
@@ -362,6 +475,7 @@ codex_failure_after() {
 }
 
 has_trigger_clean_reaction() {
+  local dismissal_status reactions reaction_status
   COMMENT_ID=""
   COMMENT_CREATED_AT=""
   if ! find_bot_trigger_comment; then
@@ -370,103 +484,179 @@ has_trigger_clean_reaction() {
   [[ -n "$COMMENT_ID" ]] || return 1
   if has_dismissed_matching_review; then
     return 1
+  else
+    dismissal_status=$?
   fi
-  local reactions
-  reactions="$(api_list "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions?per_page=100")"
-  jq -e \
+  if [[ "$dismissal_status" -ne 1 ]]; then
+    echo "::error::Unable to prove marker-backed review evidence is not dismissed."
+    return 2
+  fi
+  if ! reactions="$(api_list "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions?per_page=100")"; then
+    echo "::error::Unable to query Codex request-comment reactions."
+    return 2
+  fi
+  if jq -e \
     "any(.[]; (${is_codex_login}) and .content == \"+1\")" \
-    <<<"$reactions" >/dev/null
+    <<<"$reactions" >/dev/null; then
+    return 0
+  else
+    reaction_status=$?
+  fi
+  [[ "$reaction_status" -eq 1 ]] && return 1
+  return 2
 }
 
 
 has_native_matching_review() {
   local since="$1"
-  local reviews
-  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
-  jq -e \
+  local reviews status
+  if ! reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"; then
+    echo "::error::Unable to query native Codex reviews."
+    return 2
+  fi
+  if jq -e \
     --arg head "$HEAD_SHA" \
     --arg since "$since" \
     "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
-    <<<"$reviews" >/dev/null
+    <<<"$reviews" >/dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "$status" -eq 1 ]] && return 1
+  return 2
 }
 
 has_any_native_matching_review() {
-  local reviews
-  reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
-  jq -e \
-    --arg head "$HEAD_SHA" \
-    "any(.[]; (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
-    <<<"$reviews" >/dev/null
+  has_native_matching_review ""
 }
 
 has_any_native_clear_codex_evidence() {
-  if ! is_current_base_native_review_submission; then
-    return 1
+  local activation activation_status thread_status run_status review_status base_status reaction_status
+
+  if is_current_base_native_review_submission; then
+    if has_unresolved_codex_threads; then
+      echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+      return 1
+    else
+      local thread_status=$?
+      if [[ "$thread_status" -eq 1 ]]; then
+        return 0
+      fi
+      echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+      return 2
+    fi
   fi
+
+  if activation="$(revision_activation_created_at)"; then
+    :
+  else
+    activation_status=$?
+    [[ "$activation_status" -eq 1 ]] && return 1
+    return 2
+  fi
+
   if has_unresolved_codex_threads; then
-    echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+    echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
     return 1
   else
-    local thread_status=$?
-    if [[ "$thread_status" -eq 1 ]]; then
-      return 0
-    fi
-    echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
-    return 1
+    thread_status=$?
   fi
+  if [[ "$thread_status" -ne 1 ]]; then
+    echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+    return 2
+  fi
+
+  if has_trusted_native_review_run; then
+    if has_native_matching_review "$activation"; then
+      return 0
+    else
+      review_status=$?
+    fi
+    [[ "$review_status" -eq 1 ]] || return 2
+  else
+    run_status=$?
+    [[ "$run_status" -eq 1 ]] || return 2
+  fi
+
+  if has_single_base_for_head; then
+    if has_native_clean_reaction "$activation"; then
+      return 0
+    else
+      reaction_status=$?
+    fi
+    [[ "$reaction_status" -eq 1 ]] || return 2
+  else
+    base_status=$?
+    [[ "$base_status" -eq 1 ]] || return 2
+  fi
+  return 1
 }
 
 has_native_clean_reaction() {
   local since="$1"
-  local reactions
-  reactions="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/reactions?per_page=100")"
-  jq -e \
+  local reactions status
+  if ! reactions="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/reactions?per_page=100")"; then
+    echo "::error::Unable to query native Codex reactions."
+    return 2
+  fi
+  if jq -e \
     --arg since "$since" \
     "any(.[]; (${is_codex_login}) and .content == \"+1\" and ((.created_at // \"\") >= \$since))" \
-    <<<"$reactions" >/dev/null
+    <<<"$reactions" >/dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "$status" -eq 1 ]] && return 1
+  return 2
 }
 
 has_native_clear_codex_evidence() {
   local since="$1"
   : "$since"
-  if is_current_base_native_review_submission; then
-    if has_unresolved_codex_threads; then
-      echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
-      return 1
-    else
-      local thread_status=$?
-      if [[ "$thread_status" -eq 1 ]]; then
-        return 0
-      fi
-      echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
-      return 1
-    fi
-  fi
-  return 1
+  has_any_native_clear_codex_evidence
 }
 
 has_clear_codex_evidence() {
-  if has_matching_review || has_trigger_clean_reaction; then
-    if has_unresolved_codex_threads; then
-      echo "Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
-      return 1
+  local review_status reaction_status thread_status
+  if has_matching_review; then
+    :
+  else
+    review_status=$?
+    if [[ "$review_status" -eq 2 ]]; then
+      return 2
+    fi
+    if has_trigger_clean_reaction; then
+      :
     else
-      local thread_status=$?
-      if [[ "$thread_status" -eq 1 ]]; then
-        return 0
-      fi
-      echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
-      return 1
+      reaction_status=$?
+      [[ "$reaction_status" -eq 1 ]] && return 1
+      return 2
     fi
   fi
-  return 1
+  if has_unresolved_codex_threads; then
+    echo "Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+    return 1
+  else
+    thread_status=$?
+  fi
+  if [[ "$thread_status" -eq 1 ]]; then
+    return 0
+  fi
+  echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+  return 2
 }
 
 request_review() {
+  local native_status
   if has_any_native_clear_codex_evidence; then
     echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}; no fallback request needed."
     return 0
+  else
+    native_status=$?
   fi
+  [[ "$native_status" -eq 1 ]] || return 2
   find_bot_trigger_comment
   if [[ -n "$COMMENT_ID" ]]; then
     if has_dismissed_matching_review; then
@@ -568,6 +758,11 @@ if has_any_native_clear_codex_evidence; then
   echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}."
   complete_status success
   exit 0
+else
+  native_status=$?
+  if [[ "$native_status" -eq 2 ]]; then
+    exit 2
+  fi
 fi
 
 if is_native_review_event; then
