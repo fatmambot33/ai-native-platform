@@ -1,17 +1,18 @@
 name: Recover PR35 governance fixes
 
 on:
-  push:
-    branches:
-      - align/codex-governance
+  pull_request:
+    types: [synchronize]
     paths:
       - .github/workflows/recover-pr35.yml
+      - .github/scripts/recover_pr35.py
 
 permissions:
   contents: write
 
 jobs:
   recover:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
