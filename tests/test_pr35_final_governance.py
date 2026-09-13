@@ -18,7 +18,7 @@ def test_native_review_thread_status_is_captured_in_else_branch() -> None:
 
 def test_trusted_gate_ref_is_finalized_core_commit() -> None:
     assert ai_native.TRUSTED_AI_REVIEW_GATE_REFS == frozenset(
-        {"02d16e85b80b8631fdca011a6a73e7c703d1d507"}
+        {"7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5"}
     )
 
 

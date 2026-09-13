@@ -6,7 +6,7 @@ on:
   pull_request_target:
     types: [labeled]
   pull_request_review:
-    types: [dismissed]
+    types: [submitted, dismissed]
 
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Request one merge-ready Codex review
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@02d16e85b80b8631fdca011a6a73e7c703d1d507
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require Codex review of current HEAD and resolved threads
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@02d16e85b80b8631fdca011a6a73e7c703d1d507
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@7bcc9fc17e6b4859870ca5c3c1aa599bba437dd5
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
