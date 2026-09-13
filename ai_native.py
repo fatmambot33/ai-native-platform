@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "48f0c6c4351a040f3214ef01e036b5f00032b2cd",
+        "02d16e85b80b8631fdca011a6a73e7c703d1d507",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
