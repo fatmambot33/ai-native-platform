@@ -55,6 +55,12 @@ TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
         "96f34eeb234cb9c4cebf68749a8fcbca969f5865",
     }
 )
+PR_EVENT_FILTER_KEYS = frozenset(
+    {"branches", "branches-ignore", "paths", "paths-ignore"}
+)
+FORBIDDEN_GITHUB_CLI_ENV_KEYS = frozenset(
+    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+)
 
 
 @dataclass(frozen=True)
@@ -332,6 +338,8 @@ def _event_runs_on_required_pr_activities(
         return False
     if not isinstance(config, Mapping):
         return False
+    if any(key in config for key in PR_EVENT_FILTER_KEYS):
+        return False
     types = config.get("types")
     if types is None:
         return False
@@ -349,6 +357,8 @@ def _event_runs_only_on_label(workflow: Mapping[Any, Any], event_name: str) -> b
         return False
     config = events[event_name]
     if not isinstance(config, Mapping):
+        return False
+    if any(key in config for key in PR_EVENT_FILTER_KEYS):
         return False
     types = config.get("types")
     if isinstance(types, str):
@@ -433,6 +443,17 @@ def _positive_integer_input(value: Any) -> bool:
     return False
 
 
+def _has_forbidden_github_cli_env(value: Any) -> bool:
+    """Return whether declared env can redirect or re-authenticate GitHub CLI."""
+    if not isinstance(value, Mapping):
+        return False
+    for key in value:
+        normalized = str(key).upper()
+        if normalized.startswith("GH_") or normalized in FORBIDDEN_GITHUB_CLI_ENV_KEYS:
+            return True
+    return False
+
+
 def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
     """Return a trusted-shape canonical gate ref for a request or wait job."""
     if job.get("continue-on-error") not in (None, False):
@@ -447,6 +468,8 @@ def _gate_ref(job: Mapping[str, Any], mode: str) -> str | None:
         return None
     step = steps[0]
     if "if" in step or step.get("continue-on-error") not in (None, False):
+        return None
+    if _has_forbidden_github_cli_env(step.get("env")):
         return None
     uses = step.get("uses")
     inputs = step.get("with", {})
@@ -533,10 +556,21 @@ def _codeowners_pattern_regex(pattern: str) -> re.Pattern[str] | None:
         return None
 
 
+def _path_has_symlink_component(root: Path, relative: Path) -> bool:
+    """Return whether any repository-relative path component is a symlink."""
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def _codeowners_effective_owners(root: Path, relative: Path) -> list[str] | None:
     """Return owners from the effective last matching active CODEOWNERS rule."""
-    codeowners = root / ".github" / "CODEOWNERS"
-    if not codeowners.is_file():
+    codeowners_relative = Path(".github/CODEOWNERS")
+    codeowners = root / codeowners_relative
+    if _path_has_symlink_component(root, codeowners_relative) or not codeowners.is_file():
         return None
 
     relative_name = relative.as_posix().lstrip("/")
@@ -594,7 +628,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         ]
 
     workflow_path = root / relative
-    if workflow_path.is_symlink():
+    if _path_has_symlink_component(root, relative):
         return [
             Finding(
                 "evidence.ai_review_workflow_invalid",
@@ -631,6 +665,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         ]
 
     failures: list[str] = []
+    if _has_forbidden_github_cli_env(workflow.get("env")):
+        failures.append(
+            "workflow must not override GitHub CLI host or authentication environment"
+        )
     events = _workflow_events(workflow)
     if "pull_request" not in events:
         failures.append("missing pull_request event")
@@ -690,6 +728,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"{label} job must not override timeout-minutes")
         if "concurrency" in job:
             failures.append(f"{label} job must not override workflow concurrency")
+        if _has_forbidden_github_cli_env(job.get("env")):
+            failures.append(
+                f"{label} job must not override GitHub CLI host or authentication environment"
+            )
     if wait.get("name") not in (None, "codex-review"):
         failures.append("codex-review job name must remain codex-review")
 
@@ -772,23 +814,17 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
 
 
 def _ai_review_workflow_findings(value: Any, root: Path) -> list[Finding]:
-    """Validate every explicitly declared trusted AI-review workflow."""
+    """Validate the single explicitly declared trusted AI-review workflow."""
     path_name = "evidence.paths.ai_review_workflow"
-    declarations = _as_paths(value)
-    expected = 1 if isinstance(value, str) else len(value) if isinstance(value, Sequence) else 0
-    if not declarations or len(declarations) != expected:
+    if not isinstance(value, str) or not value:
         return [
             Finding(
                 "evidence.ai_review_workflow_invalid",
-                "AI review evidence must be a workflow path string or a nonempty list of strings.",
+                "AI review evidence must be exactly one nonempty workflow path string.",
                 path_name,
             )
         ]
-
-    findings: list[Finding] = []
-    for declaration in declarations:
-        findings.extend(_single_ai_review_workflow_findings(declaration, root))
-    return findings
+    return _single_ai_review_workflow_findings(value, root)
 
 
 def evidence_findings(data: Mapping[str, Any], root: Path) -> list[Finding]:

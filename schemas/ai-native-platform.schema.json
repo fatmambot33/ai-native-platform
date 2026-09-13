@@ -504,7 +504,8 @@
               "$ref": "#/$defs/pathValue"
             },
             "ai_review_workflow": {
-              "$ref": "#/$defs/pathValue"
+              "type": "string",
+              "minLength": 1
             },
             "security_evidence": {
               "$ref": "#/$defs/pathValue"

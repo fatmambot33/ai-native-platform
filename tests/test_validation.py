@@ -376,7 +376,7 @@ def test_ai_review_workflow_rejects_untrusted_gate_ref(tmp_path: Path) -> None:
     )
 
 
-def test_ai_review_workflow_accepts_multiple_paths(tmp_path: Path) -> None:
+def test_ai_review_workflow_rejects_multiple_paths(tmp_path: Path) -> None:
     data = _template()
     _enable_ai_review(
         data,
@@ -391,7 +391,11 @@ def test_ai_review_workflow_accepts_multiple_paths(tmp_path: Path) -> None:
 
     _, findings = validate_manifest(manifest, tmp_path)
 
-    assert findings == []
+    assert any(
+        finding.code == "schema.invalid"
+        and finding.path == "evidence.paths.ai_review_workflow"
+        for finding in findings
+    )
 
 
 def test_ai_review_workflow_requires_token_input(tmp_path: Path) -> None:
