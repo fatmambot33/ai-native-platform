@@ -7,7 +7,7 @@ on:
       - .github/workflows/apply-maintenance.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   apply:
@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: align/codex-governance
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -41,12 +42,10 @@ jobs:
           ruff check .
           pytest
           python validator/validate_standard.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: maintenance-remediation
-          path: |
-            ai_native.py
-            schemas/ai-native-platform.schema.json
-            validator/validate_standard.py
-            tests/test_validation.py
-          if-no-files-found: error
+      - name: Export validated commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai_native.py schemas/ai-native-platform.schema.json validator/validate_standard.py tests/test_validation.py
+          git commit -m "fix: close final AI review governance gaps"
+          git push --force origin HEAD:maintenance/pr35-validated
