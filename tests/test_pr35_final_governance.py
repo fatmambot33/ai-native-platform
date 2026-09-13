@@ -20,3 +20,17 @@ def test_trusted_gate_ref_is_finalized_core_commit() -> None:
     assert ai_native.TRUSTED_AI_REVIEW_GATE_REFS == frozenset(
         {"02d16e85b80b8631fdca011a6a73e7c703d1d507"}
     )
+
+
+def test_native_review_reuse_is_bound_to_current_base_event() -> None:
+    gate = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/codex-review.yml").read_text(encoding="utf-8")
+    assert "types: [submitted, dismissed]" in workflow
+    assert "EVENT_BASE_SHA=" in gate
+    assert "EVENT_REVIEW_COMMIT_SHA=" in gate
+    assert "is_current_base_native_review_submission()" in gate
+    assert '"$EVENT_BASE_SHA" == "$BASE_SHA"' in gate
+    assert '"$EVENT_REVIEW_COMMIT_SHA" == "$HEAD_SHA"' in gate
+    body = gate.split("has_any_native_clear_codex_evidence() {", 1)[1].split("\n}", 1)[0]
+    assert "is_current_base_native_review_submission" in body
+    assert "has_any_native_matching_review" not in body

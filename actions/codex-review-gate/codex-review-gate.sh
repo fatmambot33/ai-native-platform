@@ -31,6 +31,9 @@ WORKFLOW_PATH="${GITHUB_WORKFLOW_REF#${REPO}/}"
 WORKFLOW_PATH="${WORKFLOW_PATH%@*}"
 EVENT_ACTION="$(jq -r '.action // empty' "$GITHUB_EVENT_PATH")"
 EVENT_LABEL="$(jq -r '.label.name // empty' "$GITHUB_EVENT_PATH")"
+EVENT_BASE_SHA="$(jq -r '.pull_request.base.sha // empty' "$GITHUB_EVENT_PATH")"
+EVENT_REVIEW_COMMIT_SHA="$(jq -r '.review.commit_id // empty' "$GITHUB_EVENT_PATH")"
+EVENT_REVIEW_AUTHOR="$(jq -r '.review.user.login // empty' "$GITHUB_EVENT_PATH")"
 
 is_codex_login='((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]")'
 
@@ -89,6 +92,15 @@ is_wait_label_event() {
 is_native_review_event() {
   [[ "$GITHUB_EVENT_NAME" == "pull_request" \
     && ( "$EVENT_ACTION" == "opened" || "$EVENT_ACTION" == "ready_for_review" ) ]]
+}
+
+is_current_base_native_review_submission() {
+  [[ "$GITHUB_EVENT_NAME" == "pull_request_review" \
+    && "$EVENT_ACTION" == "submitted" \
+    && "$EVENT_BASE_SHA" == "$BASE_SHA" \
+    && "$EVENT_REVIEW_COMMIT_SHA" == "$HEAD_SHA" \
+    && ( "$EVENT_REVIEW_AUTHOR" == "chatgpt-codex-connector" \
+      || "$EVENT_REVIEW_AUTHOR" == "chatgpt-codex-connector[bot]" ) ]]
 }
 
 clear_request_label() {
@@ -388,7 +400,7 @@ has_any_native_matching_review() {
 }
 
 has_any_native_clear_codex_evidence() {
-  if ! has_any_native_matching_review; then
+  if ! is_current_base_native_review_submission; then
     return 1
   fi
   if has_unresolved_codex_threads; then
@@ -416,7 +428,8 @@ has_native_clean_reaction() {
 
 has_native_clear_codex_evidence() {
   local since="$1"
-  if has_native_matching_review "$since" || has_native_clean_reaction "$since"; then
+  : "$since"
+  if is_current_base_native_review_submission; then
     if has_unresolved_codex_threads; then
       echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
       return 1
