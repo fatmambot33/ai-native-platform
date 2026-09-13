@@ -24,11 +24,12 @@ def test_codex_review_action_wires_review_context() -> None:
     assert "CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}" in action
 
 
-def test_codex_review_action_wires_head_check_reporting() -> None:
-    """Expose the trusted PR-head check-run reporting input."""
+def test_codex_review_action_wires_head_status_reporting() -> None:
+    """Expose trusted PR-head commit-status reporting."""
     action = ACTION.read_text(encoding="utf-8")
 
     assert "check-name:" in action
+    assert "statuses:write" in action
     assert "CODEX_REVIEW_CHECK_NAME: ${{ inputs.check-name }}" in action
     assert "request-and-wait" in action
 
@@ -91,8 +92,8 @@ fi
     assert "--method POST" in calls
 
 
-def test_trusted_mode_reports_check_on_pr_head(tmp_path: Path) -> None:
-    """Publish the required check directly on the reviewed pull-request HEAD."""
+def test_trusted_mode_reports_status_on_pr_head(tmp_path: Path) -> None:
+    """Publish required status transitions on the reviewed pull-request HEAD."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     log = tmp_path / "gh.log"
@@ -101,9 +102,7 @@ def test_trusted_mode_reports_check_on_pr_head(tmp_path: Path) -> None:
         """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_TEST_LOG"
-if [[ "$*" == *'repos/owner/repo/check-runs '* && "$*" == *'--method POST'* ]]; then
-  printf '%s\\n' '{"id":777}'
-elif [[ "$*" == *'/pulls/42/reviews?per_page=100'* ]]; then
+if [[ "$*" == *'/pulls/42/reviews?per_page=100'* ]]; then
   exit 0
 elif [[ "$*" == *'/issues/42/comments?per_page=100'* ]]; then
   exit 0
@@ -116,8 +115,8 @@ elif [[ "$*" == *'/issues/comments/123/reactions?per_page=100'* ]]; then
   "content": "+1"
 }
 JSON
-elif [[ "$*" == *'/check-runs/777 '* && "$*" == *'--method PATCH'* ]]; then
-  printf '%s\\n' '{"id":777,"status":"completed","conclusion":"success"}'
+elif [[ "$*" == *'repos/owner/repo/statuses/abc123'* ]]; then
+  printf '%s\\n' '{"state":"success","context":"codex-review"}'
 else
   exit 0
 fi
@@ -146,6 +145,6 @@ fi
     subprocess.run(["bash", str(SCRIPT)], check=True, env=env)
 
     calls = log.read_text(encoding="utf-8")
-    assert "repos/owner/repo/check-runs -f name=codex-review -f head_sha=abc123" in calls
-    assert "repos/owner/repo/check-runs/777" in calls
-    assert "-f conclusion=success" in calls
+    assert "repos/owner/repo/statuses/abc123 -f state=pending" in calls
+    assert "-f context=codex-review" in calls
+    assert "repos/owner/repo/statuses/abc123 -f state=success" in calls
