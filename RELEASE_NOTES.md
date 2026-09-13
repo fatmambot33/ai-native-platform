@@ -15,9 +15,8 @@ Highlights:
 
 Migration: run `ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff`, implement or point `welcome_skill` and `troubleshooting_skill` evidence at real repository behavior for plugin/MCP products, validate locally, and then pin the immutable v0.3 contract.
 
+## Unreleased AI-review governance preview
 
-## AI-review governance opt-in
+AI-review governance is not part of the v0.3.0 contract. The current development branch adds an opt-in `evidence.paths.ai_review_workflow` capability for a future release; consumers pinned to v0.3.0 must not rely on that validator behavior yet.
 
-Repositories may opt into `evidence.paths.ai_review_workflow` to make current-HEAD Codex review part of merge governance. The declared workflow must pin the reusable gate to an immutable trusted framework commit, use a protected `pull_request_target` request path plus a read-only `pull_request`/review-dismissal wait path, and preserve the required `codex-review` check name.
-
-Adoption is a one-time bootstrap: land the governed workflow and CODEOWNERS rules, then require `codex-review`, enable **Require review from Code Owners**, enable dismissal of stale approvals on new pushes (or equivalent latest-push approval protection), and keep conversation resolution required. Automated clean-reaction requests are bound to server-verified GitHub Actions run provenance for the exact PR, HEAD, and base revision; the privileged maintainer bootstrap fallback exists only before the trusted request workflow is present on the default branch.
+The unreleased design requires an immutable trusted gate revision, a protected `pull_request_target` request path, a read-only `pull_request`/review-dismissal wait path, the stable `codex-review` check name, CODEOWNERS protection, stale-approval invalidation, and an up-to-date protected branch before merge. Adoption and migration guidance remains in `CHANGELOG.md` under Unreleased and `docs/AI_REVIEW_GOVERNANCE.md` until a new version ships.
