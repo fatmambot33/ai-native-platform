@@ -1,0 +1,34 @@
+name: Apply maintenance remediation
+
+on:
+  push:
+    branches: [align/codex-governance]
+    paths:
+      - .github/workflows/apply-maintenance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: align/codex-governance
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply deterministic governance fixes
+        run: python .github/scripts/apply_governance_fixes.py
+      - name: Commit remediation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai_native.py schemas/ai-native-platform.schema.json validator/validate_standard.py
+          if git diff --cached --quiet; then
+            echo "No remediation changes required."
+            exit 0
+          fi
+          git commit -m "fix: apply final governance remediations"
+          git push origin HEAD:align/codex-governance
