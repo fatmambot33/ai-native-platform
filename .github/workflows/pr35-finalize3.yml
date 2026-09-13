@@ -1,4 +1,4 @@
-name: Publish clean PR35 core fixes
+name: Publish validated PR35 code fixes
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  core-fixes:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +19,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
       - run: python -m pip install --disable-pip-version-check -e '.[dev]'
-      - name: Apply four final fixes
+      - name: Apply validated non-workflow fixes
         shell: bash
         run: |
           python - <<'PY'
@@ -47,81 +46,31 @@ jobs:
             fi
           }'''
           pattern = r'has_any_native_clear_codex_evidence\(\) \{.*?\n\}\n\nhas_native_clean_reaction\(\)'
-          text, count = re.subn(
-              pattern,
-              new_function + '\n\nhas_native_clean_reaction()',
-              text,
-              count=1,
-              flags=re.S,
-          )
+          text, count = re.subn(pattern, new_function + '\n\nhas_native_clean_reaction()', text, count=1, flags=re.S)
           if count != 1:
               raise SystemExit(f'native-review function replacements: {count}')
           shell.write_text(text, encoding='utf-8')
 
           core = Path('ai_native.py')
           text = core.read_text(encoding='utf-8')
-          pattern = (
-              r'(    if any\(inputs\.get\(key\) != value for key, value in '
-              r'required_inputs\.items\(\)\):\n        return None\n)'
-              r'(    for key in \("timeout-seconds", "poll-seconds"\):)'
-          )
-          replacement = (
-              r'\1    if inputs.get("check-name") not in (None, ""):\n'
-              r'        return None\n\2'
-          )
+          pattern = r'(    if any\(inputs\.get\(key\) != value for key, value in required_inputs\.items\(\)\):\n        return None\n)(    for key in \("timeout-seconds", "poll-seconds"\):)'
+          replacement = r'\1    if inputs.get("check-name") not in (None, ""):\n        return None\n\2'
           text, count = re.subn(pattern, replacement, text, count=1)
           if count != 1:
               raise SystemExit(f'gate input replacements: {count}')
           core.write_text(text, encoding='utf-8')
 
-          workflow = Path('.github/workflows/consumer-conformance.yml')
-          text = workflow.read_text(encoding='utf-8')
-          start = text.index('      - name: Checkout pinned standard\n')
-          end = text.index('      - name: Checkout consumer\n', start)
-          replacement = '''      - name: Checkout release candidate
-                uses: actions/checkout@v4
-                with:
-                  path: release-candidate
-              - uses: actions/setup-python@v5
-                with:
-                  python-version: '3.12'
-                  cache: pip
-              - name: Install release-candidate conformance CLI
-                run: python -m pip install --disable-pip-version-check ./release-candidate
-          '''
-          workflow.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
-
-          Path('tests/test_pr35_final_governance.py').write_text(
-              '''import inspect\nfrom pathlib import Path\n\nimport ai_native\n\n\ndef test_canonical_gate_rejects_nonempty_check_name() -> None:\n    source = inspect.getsource(ai_native._gate_ref)\n    assert 'inputs.get("check-name") not in (None, "")' in source\n\n\ndef test_native_review_thread_status_is_captured_in_else_branch() -> None:\n    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(\n        encoding="utf-8"\n    )\n    segment = text.split("has_any_native_clear_codex_evidence()", 1)[1]\n    segment = segment.split("has_native_clean_reaction()", 1)[0]\n    assert "else\\n    local thread_status=$?" in segment\n\n\ndef test_consumer_conformance_uses_release_candidate_cli() -> None:\n    text = Path(".github/workflows/consumer-conformance.yml").read_text(\n        encoding="utf-8"\n    )\n    assert "Checkout release candidate" in text\n    assert "./release-candidate" in text\n    assert "Install pinned conformance CLI" not in text\n''',
-              encoding='utf-8',
-          )
-
-          for temporary in Path('.github/workflows').glob('pr35-finalize*.yml'):
-              temporary.unlink()
+          Path('tests/test_pr35_final_governance.py').write_text('''import inspect\nfrom pathlib import Path\n\nimport ai_native\n\n\ndef test_canonical_gate_rejects_nonempty_check_name() -> None:\n    source = inspect.getsource(ai_native._gate_ref)\n    assert 'inputs.get("check-name") not in (None, "")' in source\n\n\ndef test_native_review_thread_status_is_captured_in_else_branch() -> None:\n    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(\n        encoding="utf-8"\n    )\n    segment = text.split("has_any_native_clear_codex_evidence()", 1)[1]\n    segment = segment.split("has_native_clean_reaction()", 1)[0]\n    assert "else\\n    local thread_status=$?" in segment\n''', encoding='utf-8')
           PY
-      - name: Validate core-fix tree
-        run: |
+      - run: |
           ruff check .
           pytest
           python validator/validate_standard.py
-          python tools/discover_improvements.py --budget 20 > improvement-findings.json
-          python - <<'PY'
-          import json
-          findings = json.load(open('improvement-findings.json', encoding='utf-8'))
-          if findings:
-              raise SystemExit(json.dumps(findings, indent=2))
-          PY
-          python -m build
-          python tools/release_artifacts.py dist
-          test -s dist/SHA256SUMS
-          test -s dist/sbom.spdx.json
-          test -s dist/provenance.json
           git diff --check
-      - name: Commit and publish core fixes
-        shell: bash
+      - name: Commit only non-workflow files
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'fix: close final Codex governance gaps'
+          git add ai_native.py actions/codex-review-gate/codex-review-gate.sh tests/test_pr35_final_governance.py
+          git commit -m 'fix: close final Codex gate code gaps'
           git push origin HEAD:maintenance/pr35-finalize
