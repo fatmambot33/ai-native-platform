@@ -170,7 +170,7 @@ def test_review_gate_rejects_symlinked_codeowners(tmp_path: Path) -> None:
 
 def test_review_gate_rejects_symlinked_workflow_ancestor(tmp_path: Path) -> None:
     github = tmp_path / ".github"
-    github.mkdir(parents=True)
+    github.mkdir(parents=True, exist_ok=True)
     real_workflows = tmp_path / "real-workflows"
     real_workflows.mkdir()
     (real_workflows / "codex-review.yml").write_text(WORKFLOW, encoding="utf-8")
