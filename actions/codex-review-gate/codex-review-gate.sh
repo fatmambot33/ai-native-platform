@@ -451,6 +451,7 @@ request_review() {
       -f body="$body"
   )"
   COMMENT_ID="$(jq -r '.id' <<<"$response")"
+  COMMENT_CREATED_AT="$(jq -r '.created_at' <<<"$response")"
   echo "Requested one Codex review for merge-ready HEAD ${SHORT_SHA}."
 }
 
@@ -459,20 +460,17 @@ case "$MODE" in
     if ! is_request_label_event; then
       echo "Codex review request skipped. Apply ${REQUEST_LABEL} only when the PR is merge-ready."
       complete_status success
-    complete_status success
-  exit 0
+      exit 0
     fi
     trap clear_request_label EXIT
     if has_matching_review; then
       echo "Codex already reviewed current HEAD ${SHORT_SHA}."
       complete_status success
-    complete_status success
-  exit 0
+      exit 0
     fi
     request_review
     complete_status success
-    complete_status success
-  exit 0
+    exit 0
     ;;
   wait)
     start_status
@@ -482,11 +480,34 @@ case "$MODE" in
     if has_clear_codex_evidence; then
       echo "Codex already reviewed current HEAD ${SHORT_SHA} for this review context."
       complete_status success
-      complete_status success
-    complete_status success
-  exit 0
+      exit 0
     fi
     request_review
+    request_started_at="${COMMENT_CREATED_AT:-}"
+    if [[ -z "$request_started_at" ]]; then
+      request_started_at="$(current_run_created_at)" || exit 2
+    fi
+    echo "Waiting for the requested Codex review of current HEAD ${SHORT_SHA}."
+    deadline=$((SECONDS + TIMEOUT_SECONDS))
+    while (( SECONDS < deadline )); do
+      if has_clear_codex_evidence; then
+        echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
+        complete_status success
+        exit 0
+      fi
+      if codex_failure_after "$request_started_at"; then
+        exit 1
+      else
+        failure_status=$?
+        if [[ "$failure_status" -eq 2 ]]; then
+          exit 2
+        fi
+      fi
+      sleep "$POLL_SECONDS"
+    done
+    echo "::error::Codex has not completed a clean review of current HEAD ${SHORT_SHA}."
+    echo "::error::Re-run request-and-wait only after confirming the earlier request completed or failed."
+    exit 1
     ;;
   *)
     echo "::error::Unknown Codex review gate mode: ${MODE}."
@@ -508,8 +529,7 @@ if is_native_review_event; then
     if has_native_clear_codex_evidence "$request_started_at"; then
       echo "Native Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
       complete_status success
-    complete_status success
-  exit 0
+      exit 0
     fi
     if codex_failure_after "$request_started_at"; then
       exit 1
@@ -539,8 +559,7 @@ while (( SECONDS < deadline )); do
   if has_clear_codex_evidence; then
     echo "Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
     complete_status success
-    complete_status success
-  exit 0
+    exit 0
   fi
   if codex_failure_after "$request_started_at"; then
     exit 1

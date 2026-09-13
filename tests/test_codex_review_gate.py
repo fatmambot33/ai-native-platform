@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 GATE = Path("actions/codex-review-gate/codex-review-gate.sh")
 
 
@@ -168,8 +170,10 @@ def test_gate_binds_request_provenance_to_pr_revision() -> None:
 
 def test_reusable_gate_preserves_context_and_pr_head_status_surface() -> None:
     action = Path("actions/codex-review-gate/action.yml").read_text(encoding="utf-8")
+    action_data = yaml.safe_load(action)
     script = GATE.read_text(encoding="utf-8")
 
+    assert action_data["inputs"]["base-sha"]["required"] is True
     assert "review-context:" in action
     assert "CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}" in action
     assert "check-name:" in action
@@ -180,6 +184,19 @@ def test_reusable_gate_preserves_context_and_pr_head_status_surface() -> None:
     assert '"repos/${REPO}/statuses/${HEAD_SHA}"' in script
     assert "publish_status pending" in script
     assert "complete_status success" in script
+
+
+def test_request_and_wait_mode_polls_after_requesting_review() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    request_and_wait = script.split("  request-and-wait)", maxsplit=1)[1].split(
+        "  *)", maxsplit=1
+    )[0]
+
+    assert "request_review" in request_and_wait
+    assert "Waiting for the requested Codex review" in request_and_wait
+    assert "while (( SECONDS < deadline ))" in request_and_wait
+    assert "has_clear_codex_evidence" in request_and_wait
+    assert "codex_failure_after \"$request_started_at\"" in request_and_wait
 
 
 def test_codex_review_gate_shell_syntax() -> None:

@@ -59,7 +59,7 @@ governance:
     current_head_required: true
     review_thread_resolution_required: true
     human_approval_required: false
-    request_while_ci_runs: true
+    request_while_ci_runs: false
     reference_action: actions/codex-review-gate
   human_approval_required:
     - breaking_changes

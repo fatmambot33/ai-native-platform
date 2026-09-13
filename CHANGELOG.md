@@ -12,12 +12,12 @@ All notable changes are documented here.
 ### Security
 
 - Require request jobs to use least-privilege permissions, keep wait jobs read-only, preserve the `codex-review` check name, and reject job-level concurrency/timeouts that can bypass or destabilize the gate.
-- Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation.
+- Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities below GitHub's size limit, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation plus registry-controlled executable validation pins.
 - Keep one-time bootstrap evidence limited to unedited OWNER/MEMBER/COLLABORATOR requests for repositories that have not yet landed the protected request workflow.
 
 ### Migration
 
-- Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
+- Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, finish deterministic CI before spending the one-shot Codex review request, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
 
 
 ## [0.3.0] - 2026-09-11

@@ -55,6 +55,7 @@ TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
         "96f34eeb234cb9c4cebf68749a8fcbca969f5865",
     }
 )
+CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
 PR_EVENT_FILTER_KEYS = frozenset(
     {"branches", "branches-ignore", "paths", "paths-ignore"}
 )
@@ -571,6 +572,8 @@ def _codeowners_effective_owners(root: Path, relative: Path) -> list[str] | None
     codeowners_relative = Path(".github/CODEOWNERS")
     codeowners = root / codeowners_relative
     if _path_has_symlink_component(root, codeowners_relative) or not codeowners.is_file():
+        return None
+    if codeowners.stat().st_size >= CODEOWNERS_SIZE_LIMIT_BYTES:
         return None
 
     relative_name = relative.as_posix().lstrip("/")

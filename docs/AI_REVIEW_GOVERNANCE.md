@@ -43,7 +43,7 @@ The framework repository additionally protects its reusable gate action:
 
 Enable **Require review from Code Owners** in the protected-main pull-request rule and also enable **Dismiss stale pull request approvals when new commits are pushed** (or an equivalent rule that requires approval of the most recent reviewable push). Without a current-push approval rule, an approval for an earlier benign governance revision can remain valid after the PR-loaded gate is changed.
 
-The CODEOWNERS patterns are intentionally narrow. This reference repository protects workflows, governance code, `.github/scripts/**`, and `tools/**`, while ordinary source, documentation, and test changes remain outside those code-owner rules. Governance and privileged automation changes are exceptional and require a fresh code-owner review or an explicitly authorized repository-owner bypass.
+The CODEOWNERS patterns are intentionally narrow. This reference repository protects workflows, governance code, `.github/scripts/**`, `tools/**`, and the consumer registry that pins executable validation revisions, while ordinary source, documentation, and test changes remain outside those code-owner rules. Governance and privileged automation changes are exceptional and require a fresh code-owner review or an explicitly authorized repository-owner bypass.
 
 ## Reference action
 
@@ -89,7 +89,7 @@ Both jobs need `actions: read` to verify GitHub-hosted workflow-run provenance, 
 
 When a repository declares `ai_review_workflow`, conformance validation verifies that it points to a real `.github/workflows/*.yml` or `.yaml` file with current-HEAD and review-dismissal event coverage, immutable canonical action pins, request/wait separation, evaluated PR/event-scoped cancellation, positive numeric timing overrides when supplied, no job-level timeout/concurrency overrides, exact least-privilege permissions, executable runners, a stable `codex-review` check name, no writable status/check API, and effective CODEOWNERS protection for the full workflow namespace plus `.github/CODEOWNERS` itself.
 
-CODEOWNERS matching follows root-anchor semantics: a leading `/` anchors the rule to the repository root, and the effective last matching non-comment rule determines ownership. Commented rules and ownerless final overrides do not satisfy governance protection.
+CODEOWNERS matching follows root-anchor semantics: a leading `/` anchors the rule to the repository root, and the effective last matching non-comment rule determines ownership. Commented rules, ownerless final overrides, symlinked CODEOWNERS paths, and files at or above GitHub's 3 MB CODEOWNERS limit do not satisfy governance protection.
 
 ## Bootstrap rule
 

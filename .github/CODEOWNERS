@@ -8,6 +8,7 @@
 /ai_native.py @fatmambot33
 /validator/** @fatmambot33
 /templates/** @fatmambot33
+/consumers/registry.yaml @fatmambot33
 /docs/GOVERNANCE.md @fatmambot33
 /docs/AI_REVIEW_GOVERNANCE.md @fatmambot33
 /pyproject.toml @fatmambot33

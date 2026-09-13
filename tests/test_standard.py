@@ -86,6 +86,22 @@ def test_real_consumer_registry_is_immutable_and_diverse() -> None:
         assert consumer["manifest"] == "AI_NATIVE_PLATFORM.yaml"
 
 
+def test_consumer_registry_is_codeowner_protected() -> None:
+    codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    source = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+
+    assert "/consumers/registry.yaml @fatmambot33" in codeowners
+    assert '"consumers/registry.yaml",' in source
+
+
+def test_standard_requests_review_only_after_ci_is_green() -> None:
+    standard = yaml.safe_load(
+        (ROOT / "standard/AI_NATIVE_PLATFORM.yaml").read_text(encoding="utf-8")
+    )
+
+    assert standard["governance"]["ai_review"]["request_while_ci_runs"] is False
+
+
 def test_consumer_workflow_validates_registry_entries() -> None:
     workflow = (ROOT / ".github/workflows/consumer-conformance.yml").read_text(
         encoding="utf-8"

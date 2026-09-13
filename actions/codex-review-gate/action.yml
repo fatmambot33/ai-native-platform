@@ -13,8 +13,7 @@ inputs:
     required: true
   base-sha:
     description: Current pull request base SHA for exact revision binding.
-    required: false
-    default: ""
+    required: true
   review-context:
     description: Optional context key for reusable callers; defaults to base-sha when omitted.
     required: false

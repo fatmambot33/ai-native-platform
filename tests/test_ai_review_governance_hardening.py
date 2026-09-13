@@ -241,6 +241,17 @@ def test_codeowners_ignores_commented_rules(tmp_path: Path) -> None:
     )
 
 
+def test_codeowners_at_github_size_limit_is_rejected(tmp_path: Path) -> None:
+    _write_repository(tmp_path)
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    codeowners.write_text("#" * (3 * 1024 * 1024), encoding="utf-8")
+
+    assert (
+        _codeowners_effective_owners(tmp_path, Path(".github/workflows/codex-review.yml")) is None
+    )
+    assert any("CODEOWNERS" in item.message for item in _findings(tmp_path))
+
+
 def test_review_gate_rejects_extra_request_write_permissions(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
         "      contents: read\n      issues: write", "      contents: write\n      issues: write"
