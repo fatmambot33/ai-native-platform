@@ -87,6 +87,8 @@ jobs:
           PY
       - name: Validate executable fixes
         run: |
+          ruff check --fix tests/test_pr35_final_governance.py
+          ruff format tests/test_pr35_final_governance.py
           ruff check .
           pytest
           python validator/validate_standard.py
@@ -125,6 +127,8 @@ jobs:
           PY
       - name: Validate final pinned tree
         run: |
+          ruff check --fix tests/test_pr35_final_governance.py
+          ruff format tests/test_pr35_final_governance.py
           ruff check .
           pytest
           python validator/validate_standard.py
