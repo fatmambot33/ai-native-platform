@@ -3,7 +3,7 @@ description: Request or require Codex review evidence for a pull-request HEAD.
 
 inputs:
   token:
-    description: GitHub token. Request mode needs issues:write; wait mode needs read permissions only.
+    description: GitHub token. Request mode needs issues:write; reporting needs checks:write.
     required: true
   pr-number:
     description: Pull request number.
@@ -16,9 +16,13 @@ inputs:
     required: false
     default: ""
   mode:
-    description: Either request or wait.
+    description: One of request, wait, or request-and-wait.
     required: false
     default: wait
+  check-name:
+    description: Optional check-run name to publish directly on the pull-request HEAD. Intended for trusted pull_request_target workflows with checks:write.
+    required: false
+    default: ""
   timeout-seconds:
     description: Maximum time to wait for Codex.
     required: false
@@ -40,6 +44,7 @@ runs:
         HEAD_SHA: ${{ inputs.head-sha }}
         CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}
         CODEX_REVIEW_MODE: ${{ inputs.mode }}
+        CODEX_REVIEW_CHECK_NAME: ${{ inputs.check-name }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
       run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
