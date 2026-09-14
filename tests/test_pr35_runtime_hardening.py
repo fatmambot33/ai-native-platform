@@ -1,3 +1,7 @@
+"""Focused regressions for PR #35 Codex gate runtime hardening."""
+
+from __future__ import annotations
+
 from pathlib import Path
 
 PREFLIGHT = Path("actions/codex-review-gate/preflight.sh")
