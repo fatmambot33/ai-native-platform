@@ -25,10 +25,12 @@ COMMENT_ID=""
 COMMENT_CREATED_AT=""
 STATUS_STARTED="false"
 STATUS_COMPLETED="false"
+NATIVE_EVIDENCE_REUSED="false"
 OWNER="${REPO%%/*}"
 NAME="${REPO#*/}"
 WORKFLOW_PATH="${GITHUB_WORKFLOW_REF#${REPO}/}"
 WORKFLOW_PATH="${WORKFLOW_PATH%@*}"
+REVISION_RUNS_CACHE_FILE="${RUNNER_TEMP:-/tmp}/ai-native-codex-review-runs-${GITHUB_RUN_ID}-${HEAD_SHA}.json"
 EVENT_ACTION="$(jq -r '.action // empty' "$GITHUB_EVENT_PATH")"
 EVENT_LABEL="$(jq -r '.label.name // empty' "$GITHUB_EVENT_PATH")"
 EVENT_BASE_SHA="$(jq -r '.pull_request.base.sha // empty' "$GITHUB_EVENT_PATH")"
@@ -256,20 +258,28 @@ current_run_created_at() {
 }
 
 revision_runs() {
-  local workflow_id runs
+  local workflow_id response
+  if [[ -s "$REVISION_RUNS_CACHE_FILE" ]]; then
+    cat "$REVISION_RUNS_CACHE_FILE"
+    return 0
+  fi
   if ! workflow_id="$(current_workflow_id)"; then
     return 2
   fi
-  if ! runs="$(
-    gh api --paginate \
+  if ! response="$(
+    gh api \
       -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/actions/workflows/${workflow_id}/runs?per_page=100" \
-      --jq '.workflow_runs[]' | jq -s '.'
+      "repos/${REPO}/actions/workflows/${workflow_id}/runs?head_sha=${HEAD_SHA}&per_page=100"
   )"; then
     echo "::error::Unable to query governance workflow runs for the current revision."
     return 2
   fi
-  printf '%s\n' "$runs"
+  if ! jq -e '.workflow_runs | type == "array"' <<<"$response" >/dev/null; then
+    echo "::error::GitHub returned malformed governance workflow-run data."
+    return 2
+  fi
+  jq '.workflow_runs' <<<"$response" >"$REVISION_RUNS_CACHE_FILE"
+  cat "$REVISION_RUNS_CACHE_FILE"
 }
 
 revision_activation_created_at() {
@@ -342,7 +352,6 @@ has_single_base_for_head() {
   [[ "$status" -eq 1 ]] && return 1
   return 2
 }
-
 
 trusted_request_run() {
   local run_id="$1"
@@ -506,7 +515,6 @@ has_trigger_clean_reaction() {
   return 2
 }
 
-
 has_native_matching_review() {
   local since="$1"
   local reviews status
@@ -539,7 +547,7 @@ has_any_native_clear_codex_evidence() {
       echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
       return 1
     else
-    local thread_status=$?
+      thread_status=$?
       if [[ "$thread_status" -eq 1 ]]; then
         return 0
       fi
@@ -650,7 +658,9 @@ has_clear_codex_evidence() {
 
 request_review() {
   local native_status
+  NATIVE_EVIDENCE_REUSED="false"
   if has_any_native_clear_codex_evidence; then
+    NATIVE_EVIDENCE_REUSED="true"
     echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}; no fallback request needed."
     return 0
   else
@@ -716,6 +726,11 @@ case "$MODE" in
       exit 0
     fi
     request_review
+    if [[ "$NATIVE_EVIDENCE_REUSED" == "true" ]]; then
+      echo "Native Codex review is already valid for current HEAD ${SHORT_SHA}."
+      complete_status success
+      exit 0
+    fi
     request_started_at="${COMMENT_CREATED_AT:-}"
     if [[ -z "$request_started_at" ]]; then
       request_started_at="$(current_run_created_at)" || exit 2
@@ -772,6 +787,11 @@ if is_native_review_event; then
   while (( SECONDS < deadline )); do
     if has_native_clear_codex_evidence "$request_started_at"; then
       echo "Native Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
+      complete_status success
+      exit 0
+    fi
+    if has_clear_codex_evidence; then
+      echo "Fallback Codex review is current and all Codex review threads are resolved for ${SHORT_SHA}."
       complete_status success
       exit 0
     fi
