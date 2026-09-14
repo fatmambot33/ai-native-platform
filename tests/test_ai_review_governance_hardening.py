@@ -8,6 +8,12 @@ from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_f
 
 GATE_REF = "70a27f1691c870f1f5423698b2864edd96fee98c"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
+WAIT_CONDITION = (
+    "(github.event_name == 'pull_request' || "
+    "github.event_name == 'pull_request_review' || "
+    "github.event_name == 'pull_request_review_thread') && "
+    "github.event.pull_request.draft == false"
+)
 WORKFLOW = f"""name: Codex review governance
 on:
   pull_request:
@@ -45,7 +51,7 @@ jobs:
           mode: request
           request-label: codex:review
   codex-review:
-    if: github.event.pull_request.draft == false
+    if: {WAIT_CONDITION}
     runs-on: ubuntu-latest
     permissions:
       actions: read
