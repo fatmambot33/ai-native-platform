@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_findings
 
-GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
+GATE_REF = "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WAIT_CONDITION = (
     "(github.event_name == 'pull_request' || "
@@ -475,6 +475,78 @@ def test_review_gate_rejects_ambiguous_on_keys(tmp_path: Path) -> None:
         "exactly one literal top-level on key" in item.message
         for item in _findings(tmp_path)
     )
+
+
+
+
+def test_review_gate_rejects_indirect_ownerless_workflow_override(tmp_path: Path) -> None:
+    """Reject broad basename globs that can override future workflow ownership."""
+    _write_repository(tmp_path)
+    codeowners = tmp_path / ".github" / "CODEOWNERS"
+    codeowners.write_text(
+        "/.github/workflows/** @repository-owner\n"
+        "**/release-*.yml\n"
+        "/.github/workflows/codex-review.yml @repository-owner\n"
+        "/.github/CODEOWNERS @repository-owner\n",
+        encoding="utf-8",
+    )
+    assert any("namespace rule" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_huge_timing_without_conversion_error(tmp_path: Path) -> None:
+    """Reject huge decimal timing strings without calling int on them first."""
+    huge = "9" * 5000
+    workflow = WORKFLOW.replace(
+        "          mode: wait\n          request-label: codex:review\n",
+        "          mode: wait\n          request-label: codex:review\n"
+        f"          timeout-seconds: '{huge}'\n",
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("positive timing overrides" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_timing_above_runtime_bound(tmp_path: Path) -> None:
+    """Keep timing overrides inside the supported Bash arithmetic bound."""
+    workflow = WORKFLOW.replace(
+        "          mode: wait\n          request-label: codex:review\n",
+        "          mode: wait\n          request-label: codex:review\n"
+        "          timeout-seconds: '2147483648'\n",
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("positive timing overrides" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_workflow_bash_env(tmp_path: Path) -> None:
+    """Reject workflow-level BASH_ENV injection around trusted shell code."""
+    workflow = WORKFLOW.replace(
+        "permissions:\n  contents: read\n",
+        "env:\n  BASH_ENV: /tmp/pwn\npermissions:\n  contents: read\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("trusted gate" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_job_bash_env(tmp_path: Path) -> None:
+    """Reject job-level BASH_ENV injection around trusted shell code."""
+    workflow = WORKFLOW.replace(
+        "    runs-on: ubuntu-latest\n",
+        "    runs-on: ubuntu-latest\n    env:\n      BASH_ENV: /tmp/pwn\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("trusted gate" in item.message for item in _findings(tmp_path))
+
+
+def test_review_gate_rejects_step_bash_env(tmp_path: Path) -> None:
+    """Reject gate-step BASH_ENV injection around trusted shell code."""
+    workflow = WORKFLOW.replace(
+        "      - uses: ",
+        "      - env:\n          BASH_ENV: /tmp/pwn\n        uses: ",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+    assert any("canonical gate step" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_namespace_rule_must_remain_effective(tmp_path: Path) -> None:

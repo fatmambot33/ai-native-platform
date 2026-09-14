@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ai_native import TRUSTED_AI_REVIEW_GATE_REFS
 
-REMEDIATED_GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
+REMEDIATED_GATE_REF = "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea"
 
 
 def test_canonical_gate_rejects_nonempty_check_name() -> None:

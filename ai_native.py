@@ -52,12 +52,15 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "0c4f68f62abb426ba80d0d1bb36356c3468f5534",
+        "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
 PR_EVENT_FILTER_KEYS = frozenset({"branches", "branches-ignore", "paths", "paths-ignore"})
-FORBIDDEN_GITHUB_CLI_ENV_KEYS = frozenset({"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN"})
+MAX_AI_REVIEW_TIMING_SECONDS = 2_147_483_647
+FORBIDDEN_GITHUB_CLI_ENV_KEYS = frozenset(
+    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "BASH_ENV"}
+)
 
 
 @dataclass(frozen=True)
@@ -456,18 +459,24 @@ def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
 
 
 def _positive_integer_input(value: Any) -> bool:
-    """Return whether an action input is a Bash-safe positive decimal integer."""
+    """Return whether an action input is a bounded Bash-safe positive integer."""
     if isinstance(value, bool):
         return False
     if isinstance(value, int):
-        return value > 0
+        return 0 < value <= MAX_AI_REVIEW_TIMING_SECONDS
     if isinstance(value, str):
-        return re.fullmatch(r"[1-9][0-9]*", value) is not None
+        if re.fullmatch(r"[1-9][0-9]*", value) is None:
+            return False
+        limit = str(MAX_AI_REVIEW_TIMING_SECONDS)
+        if len(value) > len(limit):
+            return False
+        if len(value) == len(limit) and value > limit:
+            return False
+        return True
     return False
 
-
 def _has_forbidden_github_cli_env(value: Any) -> bool:
-    """Return whether declared env can redirect or re-authenticate GitHub CLI."""
+    """Return whether declared env can alter trusted gate execution or GitHub CLI."""
     if not isinstance(value, Mapping):
         return False
     for key in value:
@@ -683,20 +692,35 @@ def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
     if namespace_index is None:
         return False
 
-    probes = (
+    fixed_probes = (
         ".github/workflows/__ai_native_namespace_probe__.yml",
         ".github/workflows/nested/__ai_native_namespace_probe__.yml",
+        ".github/workflows/release-x.yml",
+        ".github/workflows/release-x.yaml",
+        ".github/workflows/ci.yml",
     )
     for pattern, owners in active_rules[namespace_index + 1 :]:
         normalized = pattern.lstrip("/")
         matcher = _codeowners_pattern_regex(pattern)
+        derived_probe = None
+        if matcher is not None:
+            basename = normalized.rsplit("/", 1)[-1]
+            basename = re.sub(r"\[[^]]+\]", "a", basename)
+            basename = basename.replace("*", "x").replace("?", "x")
+            if basename and "/" not in basename:
+                derived_probe = f".github/workflows/{basename}"
         targets_workflows = (
             normalized == ".github/workflows"
             or normalized.startswith(".github/workflows/")
             or "/" not in normalized
             or (
                 matcher is not None
-                and any(matcher.fullmatch(probe) for probe in probes)
+                and any(matcher.fullmatch(probe) for probe in fixed_probes)
+            )
+            or (
+                matcher is not None
+                and derived_probe is not None
+                and matcher.fullmatch(derived_probe) is not None
             )
         )
         if targets_workflows and (
@@ -791,7 +815,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     if "on" in workflow and True in workflow:
         failures.append("workflow must not contain both YAML representations of the on event key")
     if _has_forbidden_github_cli_env(workflow.get("env")):
-        failures.append("workflow must not override GitHub CLI host or authentication environment")
+        failures.append("workflow must not override trusted gate or GitHub CLI environment")
     events = _workflow_events(workflow)
     if "pull_request" not in events:
         failures.append("missing pull_request event")
@@ -861,7 +885,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"{label} job must not override workflow concurrency")
         if _has_forbidden_github_cli_env(job.get("env")):
             failures.append(
-                f"{label} job must not override GitHub CLI host or authentication environment"
+                f"{label} job must not override trusted gate or GitHub CLI environment"
             )
     if wait.get("name") not in (None, "codex-review"):
         failures.append("codex-review job name must remain codex-review")
