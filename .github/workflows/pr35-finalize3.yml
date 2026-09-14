@@ -41,15 +41,16 @@ jobs:
           python -m ai_native validate fixtures/passing/library.yaml --root fixtures --format json
           bash -n actions/codex-review-gate/preflight.sh actions/codex-review-gate/codex-review-gate.sh
           python tools/discover_improvements.py --budget 20
+          python -m build
           git diff --check
       - name: Commit and push PR head
         working-directory: target
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add ai_native.py validator/validate_standard.py .github/CODEOWNERS tests/test_pr35_followup_regressions.py
+          git add ai_native.py .github/workflows/codex-review.yml tests/test_ai_review_governance_hardening.py tests/test_pr35_followup_regressions.py
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m 'fix: close final PR35 governance gaps'
+          git commit -m 'fix: close final Codex governance findings'
           git push origin HEAD:align/codex-governance
