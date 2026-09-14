@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea",
+        "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
@@ -475,6 +475,7 @@ def _positive_integer_input(value: Any) -> bool:
         return True
     return False
 
+
 def _has_forbidden_github_cli_env(value: Any) -> bool:
     """Return whether declared env can alter trusted gate execution or GitHub CLI."""
     if not isinstance(value, Mapping):
@@ -732,6 +733,7 @@ def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
         ):
             return False
     return True
+
 
 def _unowned_workflows(root: Path) -> list[str]:
     """Return current workflow files lacking effective CODEOWNERS coverage."""
