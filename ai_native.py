@@ -653,7 +653,7 @@ def _codeowners_covers_path(root: Path, relative: Path) -> bool:
 
 
 def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
-    """Return whether the workflow namespace retains effective CODEOWNERS coverage."""
+    """Return whether CODEOWNERS keeps the full workflow namespace protected."""
     codeowners = root / ".github" / "CODEOWNERS"
     if _path_has_symlink_component(root, Path(".github/CODEOWNERS")) or not codeowners.is_file():
         return False
@@ -663,21 +663,47 @@ def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
         "/.github/workflows/",
         ".github/workflows/",
     }
-    namespace_rule = False
+    active_rules: list[tuple[str, list[str]]] = []
     for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()
-        if parts and parts[0] in accepted and parts[1:]:
-            if all(_valid_codeowner(owner) for owner in parts[1:]):
-                namespace_rule = True
-    if not namespace_rule:
-        return False
-    return _codeowners_covers_path(
-        root, Path(".github/workflows/__ai_native_unmatched_probe__.yml")
-    )
+        if parts:
+            active_rules.append((parts[0], parts[1:]))
 
+    namespace_index: int | None = None
+    for index, (pattern, owners) in enumerate(active_rules):
+        if (
+            pattern in accepted
+            and bool(owners)
+            and all(_valid_codeowner(owner) for owner in owners)
+        ):
+            namespace_index = index
+    if namespace_index is None:
+        return False
+
+    probes = (
+        ".github/workflows/__ai_native_namespace_probe__.yml",
+        ".github/workflows/nested/__ai_native_namespace_probe__.yml",
+    )
+    for pattern, owners in active_rules[namespace_index + 1 :]:
+        normalized = pattern.lstrip("/")
+        matcher = _codeowners_pattern_regex(pattern)
+        targets_workflows = (
+            normalized == ".github/workflows"
+            or normalized.startswith(".github/workflows/")
+            or "/" not in normalized
+            or (
+                matcher is not None
+                and any(matcher.fullmatch(probe) for probe in probes)
+            )
+        )
+        if targets_workflows and (
+            not owners or not all(_valid_codeowner(owner) for owner in owners)
+        ):
+            return False
+    return True
 
 def _unowned_workflows(root: Path) -> list[str]:
     """Return current workflow files lacking effective CODEOWNERS coverage."""

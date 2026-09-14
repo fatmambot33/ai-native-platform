@@ -1,4 +1,3 @@
-/.github/workflows/** @fatmambot33
 /.github/scripts/** @fatmambot33
 /.github/dependabot.yml @fatmambot33
 /tools/** @fatmambot33
@@ -19,3 +18,4 @@
 /SECURITY.md @fatmambot33
 /CHANGELOG.md @fatmambot33
 /RELEASE_NOTES.md @fatmambot33
+/.github/workflows/** @fatmambot33

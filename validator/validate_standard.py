@@ -399,6 +399,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
     governed_paths = (
         ".github/workflows/codex-review.yml",
         ".github/CODEOWNERS",
+        ".github/dependabot.yml",
         "actions/codex-review-gate/action.yml",
         "actions/codex-review-gate/codex-review-gate.sh",
         "actions/codex-review-gate/preflight.sh",
