@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ai_native import TRUSTED_AI_REVIEW_GATE_REFS
 
-REMEDIATED_GATE_REF = "2c0e08d1ef9315c8b3f5693b4b51796d12cc02ff"
+REMEDIATED_GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
 
 
 def test_canonical_gate_rejects_nonempty_check_name() -> None:
@@ -40,10 +40,32 @@ def test_native_review_reuse_is_bound_to_current_base_event() -> None:
     assert "has_any_native_matching_review" not in body
 
 
-def test_release_records_are_codeowner_governed() -> None:
+def test_release_records_and_release_policy_are_codeowner_governed() -> None:
     codeowners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
     validator = Path("validator/validate_standard.py").read_text(encoding="utf-8")
     assert "/CHANGELOG.md @fatmambot33" in codeowners
     assert "/RELEASE_NOTES.md @fatmambot33" in codeowners
+    assert "/docs/RELEASE.md @fatmambot33" in codeowners
     assert '"CHANGELOG.md",' in validator
     assert '"RELEASE_NOTES.md",' in validator
+    assert '"docs/RELEASE.md",' in validator
+
+
+def test_workflow_event_key_validation_preserves_literal_spelling() -> None:
+    import ai_native
+
+    source = inspect.getsource(ai_native._workflow_top_level_event_key_is_valid)
+    workflow_validation = inspect.getsource(ai_native._single_ai_review_workflow_findings)
+    assert 'keys.count("on") == 1' in source
+    assert '"true" not in keys' in source
+    assert "yaml.compose" in source
+    assert "_workflow_top_level_event_key_is_valid(workflow_text)" in workflow_validation
+
+
+def test_review_request_condition_requires_non_draft_guard() -> None:
+    import ai_native
+
+    source = inspect.getsource(ai_native._uses_labeled_review_request)
+    assert "github.event.pull_request.draft == false" in source
+    assert "return condition == draft_guard" in source
+    assert "condition in {event_guard, draft_guard}" not in source
