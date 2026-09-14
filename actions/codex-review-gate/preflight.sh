@@ -55,6 +55,10 @@ verify_live_revision() {
   fi
 }
 
+read_event_draft() {
+  jq -r 'if .pull_request.draft == null then true else .pull_request.draft end' "$GITHUB_EVENT_PATH"
+}
+
 verify_codeowners
 
 if [[ "$MODE" == "request-and-wait" ]]; then
@@ -62,7 +66,7 @@ if [[ "$MODE" == "request-and-wait" ]]; then
   event_name="${GITHUB_EVENT_NAME:-}"
   event_action="$(jq -r '.action // empty' "$GITHUB_EVENT_PATH")"
   event_label="$(jq -r '.label.name // empty' "$GITHUB_EVENT_PATH")"
-  event_draft="$(jq -r '.pull_request.draft // true' "$GITHUB_EVENT_PATH")"
+  event_draft="$(read_event_draft)"
   if [[ "$event_name" != "pull_request_target" || "$event_action" != "labeled" || "$event_label" != "$REQUEST_LABEL" || "$event_draft" != "false" ]]; then
     echo "::error::request-and-wait may consume review quota only on an explicit ${REQUEST_LABEL} label event for a non-draft PR."
     exit 1
@@ -77,7 +81,7 @@ source <(sed '/^case "$MODE" in/,$d' "$GATE_SCRIPT")
 
 is_request_label_event() {
   local draft
-  draft="$(jq -r '.pull_request.draft // true' "$GITHUB_EVENT_PATH")"
+  draft="$(read_event_draft)"
   [[ "$GITHUB_EVENT_NAME" == "pull_request_target" \
     && "$EVENT_ACTION" == "labeled" \
     && "$EVENT_LABEL" == "$REQUEST_LABEL" \
@@ -120,53 +124,65 @@ revision_runs() {
   cat "$REVISION_RUNS_CACHE_FILE"
 }
 
-has_dismissed_native_review_since() {
-  local since="$1"
-  local reviews status
-  if ! reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"; then
-    echo "::error::Unable to query dismissed native Codex reviews."
+# Reusable native evidence must come from a live, non-dismissed exact-HEAD review
+# plus server-verifiable workflow-run provenance. PR-level reactions are not
+# revision-addressed, so they are deliberately excluded from this success path.
+has_any_native_clear_codex_evidence() {
+  local activation activation_status thread_status run_status review_status
+
+  if is_current_base_native_review_submission; then
+    if has_native_matching_review ""; then
+      :
+    else
+      review_status=$?
+      [[ "$review_status" -eq 1 ]] && return 1
+      echo "::error::Unable to prove the submitted Codex review remains live and non-dismissed."
+      return 2
+    fi
+    if has_unresolved_codex_threads; then
+      echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
+      return 1
+    else
+      thread_status=$?
+      if [[ "$thread_status" -eq 1 ]]; then
+        return 0
+      fi
+      echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
+      return 2
+    fi
+  fi
+
+  if activation="$(revision_activation_created_at)"; then
+    :
+  else
+    activation_status=$?
+    [[ "$activation_status" -eq 1 ]] && return 1
     return 2
   fi
-  if jq -e \
-    --arg head "$HEAD_SHA" \
-    --arg since "$since" \
-    "any(.[]; (${is_codex_login}) and ((.state // \"\") == \"DISMISSED\") and ((.commit_id // \"\") == \$head) and ((.submitted_at // \"\") >= \$since))" \
-    <<<"$reviews" >/dev/null; then
-    return 0
-  else
-    status=$?
-  fi
-  [[ "$status" -eq 1 ]] && return 1
-  echo "::error::Unable to evaluate dismissed native Codex review evidence."
-  return 2
-}
 
-has_native_clean_reaction() {
-  local since="$1"
-  local dismissal_status reactions status
-  if has_dismissed_native_review_since "$since"; then
+  if has_unresolved_codex_threads; then
+    echo "Native Codex evidence exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
     return 1
   else
-    dismissal_status=$?
+    thread_status=$?
   fi
-  if [[ "$dismissal_status" -ne 1 ]]; then
-    echo "::error::Unable to prove native reaction evidence is not dismissed."
+  if [[ "$thread_status" -ne 1 ]]; then
+    echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
     return 2
   fi
-  if ! reactions="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/reactions?per_page=100")"; then
-    echo "::error::Unable to query native Codex reactions."
-    return 2
-  fi
-  if jq -e \
-    --arg since "$since" \
-    "any(.[]; (${is_codex_login}) and .content == \"+1\" and ((.created_at // \"\") >= \$since))" \
-    <<<"$reactions" >/dev/null; then
-    return 0
+
+  if has_trusted_native_review_run; then
+    if has_native_matching_review "$activation"; then
+      return 0
+    else
+      review_status=$?
+    fi
+    [[ "$review_status" -eq 1 ]] || return 2
   else
-    status=$?
+    run_status=$?
+    [[ "$run_status" -eq 1 ]] || return 2
   fi
-  [[ "$status" -eq 1 ]] && return 1
-  return 2
+  return 1
 }
 
 # Terminal bot comments are accepted only when they carry the exact revision
