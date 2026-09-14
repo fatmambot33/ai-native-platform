@@ -52,7 +52,7 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "2c0e08d1ef9315c8b3f5693b4b51796d12cc02ff",
+        "0c4f68f62abb426ba80d0d1bb36356c3468f5534",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
@@ -298,6 +298,18 @@ def _path_exists(root: Path, declaration: str) -> bool:
     return (root / declaration).exists()
 
 
+def _workflow_top_level_event_key_is_valid(text: str) -> bool:
+    """Return whether raw workflow YAML declares exactly one literal top-level `on` key."""
+    try:
+        node = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError:
+        return False
+    if not isinstance(node, yaml.MappingNode):
+        return False
+    keys = [key.value for key, _ in node.value if isinstance(key, yaml.ScalarNode)]
+    return keys.count("on") == 1 and "true" not in keys
+
+
 def _workflow_events_value(workflow: Mapping[Any, Any]) -> Any:
     """Return the parsed GitHub workflow event declaration."""
     if "on" in workflow and True in workflow:
@@ -417,14 +429,14 @@ def _uses_event(job: Mapping[str, Any], event_name: str) -> bool:
 
 
 def _uses_labeled_review_request(job: Mapping[str, Any]) -> bool:
-    """Return whether request execution is bound to the one-shot review label."""
+    """Return whether request execution is bound to the one-shot review label on a non-draft PR."""
     condition = _normalize_condition(job.get("if"))
     event_guard = (
         "github.event_name == 'pull_request_target' && github.event.action == 'labeled' "
         "&& github.event.label.name == 'codex:review'"
     )
     draft_guard = f"{event_guard} && github.event.pull_request.draft == false"
-    return condition in {event_guard, draft_guard}
+    return condition == draft_guard
 
 
 def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
@@ -721,8 +733,17 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             )
         ]
 
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    if not _workflow_top_level_event_key_is_valid(workflow_text):
+        return [
+            Finding(
+                "evidence.ai_review_workflow_invalid",
+                "AI review workflow must declare exactly one literal top-level on key and must not use a literal true key as the event declaration.",
+                path_name,
+            )
+        ]
     try:
-        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        workflow = yaml.safe_load(workflow_text)
     except yaml.YAMLError as exc:
         return [
             Finding(
@@ -820,7 +841,9 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         failures.append("codex-review job name must remain codex-review")
 
     if not _uses_labeled_review_request(request):
-        failures.append("request job condition must bind only codex:review labeled events")
+        failures.append(
+            "request job condition must bind only codex:review labeled events on a non-draft PR"
+        )
     if not _uses_review_wait_events(wait):
         failures.append(
             "codex-review job condition must canonically bind pull_request and pull_request_review"
