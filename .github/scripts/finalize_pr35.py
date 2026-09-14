@@ -17,7 +17,7 @@ core_text = _replace_function(
     "def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:\n",
     "def _unowned_workflows(root: Path) -> list[str]:\n",
     '''def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
-    """Return whether the final CODEOWNERS rule protects every workflow path."""
+    """Return whether CODEOWNERS keeps the full workflow namespace protected."""
     codeowners = root / ".github" / "CODEOWNERS"
     if _path_has_symlink_component(root, Path(".github/CODEOWNERS")) or not codeowners.is_file():
         return False
@@ -35,14 +35,39 @@ core_text = _replace_function(
         parts = line.split()
         if parts:
             active_rules.append((parts[0], parts[1:]))
-    if not active_rules:
+
+    namespace_index: int | None = None
+    for index, (pattern, owners) in enumerate(active_rules):
+        if (
+            pattern in accepted
+            and bool(owners)
+            and all(_valid_codeowner(owner) for owner in owners)
+        ):
+            namespace_index = index
+    if namespace_index is None:
         return False
-    pattern, owners = active_rules[-1]
-    return (
-        pattern in accepted
-        and bool(owners)
-        and all(_valid_codeowner(owner) for owner in owners)
-    )''',
+
+    probes = (
+        ".github/workflows/__ai_native_namespace_probe__.yml",
+        ".github/workflows/nested/__ai_native_namespace_probe__.yml",
+    )
+    for pattern, owners in active_rules[namespace_index + 1 :]:
+        normalized = pattern.lstrip("/")
+        matcher = _codeowners_pattern_regex(pattern)
+        targets_workflows = (
+            normalized == ".github/workflows"
+            or normalized.startswith(".github/workflows/")
+            or "/" not in normalized
+            or (
+                matcher is not None
+                and any(matcher.fullmatch(probe) for probe in probes)
+            )
+        )
+        if targets_workflows and (
+            not owners or not all(_valid_codeowner(owner) for owner in owners)
+        ):
+            return False
+    return True''',
 )
 core.write_text(core_text, encoding="utf-8")
 
@@ -86,10 +111,10 @@ if "import ai_native\n" not in test_text:
 regressions = '''
 
 
-def test_workflow_namespace_owner_rule_must_be_final_effective_rule(tmp_path: Path) -> None:
+def test_workflow_namespace_owner_rule_rejects_later_ownerless_override(tmp_path: Path) -> None:
     """Reject a predictable-probe bypass after an ownerless workflow override."""
     github = tmp_path / ".github"
-    github.mkdir()
+    github.mkdir(exist_ok=True)
     codeowners = github / "CODEOWNERS"
     codeowners.write_text(
         "/.github/workflows/** @fatmambot33\\n"
@@ -100,8 +125,8 @@ def test_workflow_namespace_owner_rule_must_be_final_effective_rule(tmp_path: Pa
     assert not ai_native._codeowners_has_workflow_namespace_rule(tmp_path)
 
     codeowners.write_text(
-        codeowners.read_text(encoding="utf-8")
-        + "/.github/workflows/** @fatmambot33\\n",
+        "/.github/workflows/** @fatmambot33\\n"
+        "/.github/CODEOWNERS @fatmambot33\\n",
         encoding="utf-8",
     )
     assert ai_native._codeowners_has_workflow_namespace_rule(tmp_path)
@@ -114,6 +139,6 @@ def test_dependabot_configuration_is_canonically_governed() -> None:
     )
     assert '".github/dependabot.yml"' in validator_text
 '''
-if "test_workflow_namespace_owner_rule_must_be_final_effective_rule" not in test_text:
+if "test_workflow_namespace_owner_rule_rejects_later_ownerless_override" not in test_text:
     test_text += regressions
 test_path.write_text(test_text, encoding="utf-8")
