@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_findings
 
-GATE_REF = "2c0e08d1ef9315c8b3f5693b4b51796d12cc02ff"
+GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WAIT_CONDITION = (
     "(github.event_name == 'pull_request' || "
@@ -34,7 +34,8 @@ jobs:
     if: >-
       github.event_name == 'pull_request_target' &&
       github.event.action == 'labeled' &&
-      github.event.label.name == 'codex:review'
+      github.event.label.name == 'codex:review' &&
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -371,8 +372,8 @@ def test_review_gate_restricts_target_to_review_label(tmp_path: Path) -> None:
 
 def test_review_gate_requires_explicit_review_label_condition(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
-        "      github.event.label.name == 'codex:review'\n",
-        "      github.event.label.name == 'other'\n",
+        "      github.event.label.name == 'codex:review' &&\n",
+        "      github.event.label.name == 'other' &&\n",
         1,
     )
     _write_repository(tmp_path, workflow)
@@ -470,7 +471,7 @@ def test_review_gate_requires_review_thread_revalidation(tmp_path: Path) -> None
 def test_review_gate_rejects_ambiguous_on_keys(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace("on:\n", '"on":\n', 1) + "\non:\n  push:\n"
     _write_repository(tmp_path, workflow)
-    assert any("both YAML representations" in item.message for item in _findings(tmp_path))
+    assert any("exactly one literal top-level on key" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_namespace_rule_must_remain_effective(tmp_path: Path) -> None:
