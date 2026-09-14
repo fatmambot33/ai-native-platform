@@ -14,7 +14,7 @@ from ai_native import (
     template_path,
 )
 
-GATE_REF = "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea"
+GATE_REF = "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WAIT_CONDITION = (
     "(github.event_name == 'pull_request' || "
