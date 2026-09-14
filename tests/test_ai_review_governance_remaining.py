@@ -14,7 +14,7 @@ from ai_native import (
     template_path,
 )
 
-GATE_REF = "2c0e08d1ef9315c8b3f5693b4b51796d12cc02ff"
+GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
 WAIT_CONDITION = (
     "(github.event_name == 'pull_request' || "
@@ -42,7 +42,8 @@ jobs:
     if: >-
       github.event_name == 'pull_request_target' &&
       github.event.action == 'labeled' &&
-      github.event.label.name == 'codex:review'
+      github.event.label.name == 'codex:review' &&
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
