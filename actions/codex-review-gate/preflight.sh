@@ -85,7 +85,7 @@ is_request_label_event() {
 }
 
 revision_runs() {
-  local workflow_id now modified cache_ttl
+  local workflow_id now modified cache_ttl tmp_cache
   cache_ttl="$POLL_SECONDS"
   if (( cache_ttl > 1 )); then
     cache_ttl=$((cache_ttl - 1))
@@ -101,17 +101,22 @@ revision_runs() {
   if ! workflow_id="$(current_workflow_id)"; then
     return 2
   fi
+  tmp_cache="${REVISION_RUNS_CACHE_FILE}.tmp.$$"
+  rm -f "$tmp_cache"
   if ! gh api --paginate \
       -H "Accept: application/vnd.github+json" \
       "repos/${REPO}/actions/workflows/${workflow_id}/runs?head_sha=${HEAD_SHA}&per_page=100" \
-      --jq '.workflow_runs[]' | jq -s '.' >"$REVISION_RUNS_CACHE_FILE"; then
+      --jq '.workflow_runs[]' | jq -s '.' >"$tmp_cache"; then
+    rm -f "$tmp_cache"
     echo "::error::Unable to query governance workflow runs for the current revision."
     return 2
   fi
-  if ! jq -e 'type == "array"' "$REVISION_RUNS_CACHE_FILE" >/dev/null; then
+  if ! jq -e 'type == "array"' "$tmp_cache" >/dev/null; then
+    rm -f "$tmp_cache"
     echo "::error::GitHub returned malformed governance workflow-run data."
     return 2
   fi
+  mv "$tmp_cache" "$REVISION_RUNS_CACHE_FILE"
   cat "$REVISION_RUNS_CACHE_FILE"
 }
 
