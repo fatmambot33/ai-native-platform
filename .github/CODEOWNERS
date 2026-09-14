@@ -1,5 +1,6 @@
 /.github/workflows/** @fatmambot33
 /.github/scripts/** @fatmambot33
+/.github/dependabot.yml @fatmambot33
 /tools/** @fatmambot33
 /.github/CODEOWNERS @fatmambot33
 /actions/codex-review-gate/** @fatmambot33
