@@ -149,12 +149,13 @@ if OLD_GATE_REF not in workflow_text:
     raise SystemExit("old workflow gate ref missing")
 workflow.write_text(workflow_text.replace(OLD_GATE_REF, NEW_GATE_REF), encoding="utf-8")
 
+for test_file in Path("tests").glob("test_*.py"):
+    test_content = test_file.read_text(encoding="utf-8")
+    if OLD_GATE_REF in test_content:
+        test_file.write_text(test_content.replace(OLD_GATE_REF, NEW_GATE_REF), encoding="utf-8")
+
 test_path = Path("tests/test_ai_review_governance_hardening.py")
 test_text = test_path.read_text(encoding="utf-8")
-if OLD_GATE_REF not in test_text:
-    raise SystemExit("old test gate ref missing")
-test_text = test_text.replace(OLD_GATE_REF, NEW_GATE_REF)
-
 marker = "def test_review_gate_namespace_rule_must_remain_effective(tmp_path: Path) -> None:\n"
 if marker not in test_text:
     raise SystemExit("test insertion point missing")
