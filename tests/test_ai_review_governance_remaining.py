@@ -53,7 +53,7 @@ jobs:
           mode: request
           request-label: codex:review
   codex-review:
-    if: github.event.pull_request.draft == false
+    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_thread') && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -286,3 +286,16 @@ def test_review_gate_accepts_matching_review_contexts(tmp_path: Path) -> None:
     )
     _write_repository(tmp_path, workflow)
     assert not _findings(tmp_path)
+
+
+def test_review_gate_rejects_wait_job_without_explicit_read_only_event_guard(
+    tmp_path: Path,
+) -> None:
+    workflow = WORKFLOW.replace(
+        "    if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_thread') && github.event.pull_request.draft == false\n",
+        "    if: github.event.pull_request.draft == false\n",
+        1,
+    )
+    _write_repository(tmp_path, workflow)
+
+    assert any("codex-review job condition" in item.message for item in _findings(tmp_path))
