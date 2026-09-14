@@ -25,16 +25,26 @@ def test_revision_run_cache_refreshes_and_paginates_filtered_history() -> None:
     assert "jq -s '.'" in block
 
 
-def test_native_reaction_rejects_dismissed_review() -> None:
+def test_native_exact_revision_evidence_does_not_use_pr_reactions() -> None:
     script = PREFLIGHT.read_text(encoding="utf-8")
-    reaction = _block(script, "has_native_clean_reaction")
-    dismissed = _block(script, "has_dismissed_native_review_since")
+    block = _block(script, "has_any_native_clear_codex_evidence")
 
-    assert "has_dismissed_native_review_since" in reaction
-    assert reaction.index("has_dismissed_native_review_since") < reaction.index("reactions=")
-    assert "DISMISSED" in dismissed
-    assert ".commit_id" in dismissed
-    assert "return 2" in dismissed
+    assert "has_native_matching_review" in block
+    assert "has_trusted_native_review_run" in block
+    assert "has_native_clean_reaction" not in block
+    assert "issues/${PR_NUMBER}/reactions" not in block
+
+
+def test_submitted_review_event_rechecks_live_review_state() -> None:
+    script = PREFLIGHT.read_text(encoding="utf-8")
+    block = _block(script, "has_any_native_clear_codex_evidence")
+
+    assert "is_current_base_native_review_submission" in block
+    assert 'has_native_matching_review ""' in block
+    assert block.index("is_current_base_native_review_submission") < block.index(
+        'has_native_matching_review ""'
+    )
+    assert "remains live and non-dismissed" in block
 
 
 def test_terminal_failures_must_match_current_revision_marker() -> None:
@@ -65,12 +75,16 @@ def test_request_and_wait_clears_one_shot_label_on_every_exit() -> None:
     assert "trap on_exit_with_request_label EXIT" in script
 
 
-def test_request_runtime_requires_non_draft_pr() -> None:
+def test_request_runtime_preserves_false_draft_value() -> None:
     script = PREFLIGHT.read_text(encoding="utf-8")
-    block = _block(script, "is_request_label_event")
+    reader = _block(script, "read_event_draft")
+    request = _block(script, "is_request_label_event")
 
-    assert ".pull_request.draft // true" in block
-    assert '"$draft" == "false"' in block
+    assert "if .pull_request.draft == null then true else .pull_request.draft end" in reader
+    assert ".pull_request.draft // true" not in script
+    assert "read_event_draft" in request
+    assert '"$draft" == "false"' in request
+    assert 'event_draft="$(read_event_draft)"' in script
     assert "non-draft PR" in script
 
 
