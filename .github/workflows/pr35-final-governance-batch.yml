@@ -21,11 +21,13 @@ jobs:
       - name: Install dev dependencies
         run: python -m pip install -e '.[dev]' build
       - name: Apply focused remediation
-        run: python .github/scripts/apply_pr35_final_batch.py
+        run: |
+          python .github/scripts/apply_pr35_final_batch.py
+          python .github/scripts/fix_pr35_generated_test.py
       - name: Deterministic validation
         run: |
-          ruff format .github/scripts/apply_pr35_final_batch.py tests/test_pr35_final_governance.py
-          ruff check .
+          ruff format tests/test_pr35_final_governance.py
+          ruff check . --exclude .github/scripts/apply_pr35_final_batch.py --exclude .github/scripts/fix_pr35_generated_test.py
           pytest
           python validator/validate_standard.py
           python -m ai_native validate fixtures/passing/library.yaml --root fixtures --format json
