@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ai_native import TRUSTED_AI_REVIEW_GATE_REFS
 
-REMEDIATED_GATE_REF = "b3b6b1633fd4db8759bb603984f84c1c74227ec3"
+REMEDIATED_GATE_REF = "2c0e08d1ef9315c8b3f5693b4b51796d12cc02ff"
 
 
 def test_canonical_gate_rejects_nonempty_check_name() -> None:
@@ -20,8 +20,8 @@ def test_native_review_thread_status_is_captured_in_else_branch() -> None:
     assert "else\n      thread_status=$?" in segment
 
 
-def test_trusted_gate_ref_includes_remediated_commit() -> None:
-    assert REMEDIATED_GATE_REF in TRUSTED_AI_REVIEW_GATE_REFS
+def test_trusted_gate_ref_is_only_remediated_commit() -> None:
+    assert TRUSTED_AI_REVIEW_GATE_REFS == frozenset({REMEDIATED_GATE_REF})
     workflow = Path(".github/workflows/codex-review.yml").read_text(encoding="utf-8")
     assert workflow.count(f"@{REMEDIATED_GATE_REF}") == 2
 
