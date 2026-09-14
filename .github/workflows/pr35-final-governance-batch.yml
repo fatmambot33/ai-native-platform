@@ -24,6 +24,7 @@ jobs:
         run: python .github/scripts/apply_pr35_final_batch.py
       - name: Deterministic validation
         run: |
+          ruff format .github/scripts/apply_pr35_final_batch.py tests/test_pr35_final_governance.py
           ruff check .
           pytest
           python validator/validate_standard.py
