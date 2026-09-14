@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 PREFLIGHT = Path("actions/codex-review-gate/preflight.sh")
 
 
