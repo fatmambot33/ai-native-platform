@@ -471,7 +471,10 @@ def test_review_gate_requires_review_thread_revalidation(tmp_path: Path) -> None
 def test_review_gate_rejects_ambiguous_on_keys(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace("on:\n", '"on":\n', 1) + "\non:\n  push:\n"
     _write_repository(tmp_path, workflow)
-    assert any("exactly one literal top-level on key" in item.message for item in _findings(tmp_path))
+    assert any(
+        "exactly one literal top-level on key" in item.message
+        for item in _findings(tmp_path)
+    )
 
 
 def test_review_gate_namespace_rule_must_remain_effective(tmp_path: Path) -> None:
