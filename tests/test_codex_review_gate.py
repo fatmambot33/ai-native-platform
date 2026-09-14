@@ -205,7 +205,6 @@ def test_codex_review_gate_shell_syntax() -> None:
     subprocess.run(["bash", "-n", str(GATE)], check=True)
 
 
-
 def test_gate_removes_unverifiable_collaborator_bootstrap() -> None:
     source = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
     block = source.split("find_trigger_comment() {", 1)[1].split("}\n", 1)[0]
@@ -247,3 +246,35 @@ def test_dismissal_query_errors_fail_closed() -> None:
     reaction = _function_body(script, "has_trigger_clean_reaction")
     assert "dismissal_status" in reaction
     assert "Unable to prove marker-backed review evidence is not dismissed" in reaction
+
+
+def test_request_and_wait_exits_after_native_evidence_reuse() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    request = _function_body(script, "request_review")
+    request_and_wait = script.split("  request-and-wait)", maxsplit=1)[1].split(
+        "  *)", maxsplit=1
+    )[0]
+
+    assert 'NATIVE_EVIDENCE_REUSED="true"' in request
+    assert 'if [[ "$NATIVE_EVIDENCE_REUSED" == "true" ]]' in request_and_wait
+    assert "complete_status success" in request_and_wait
+
+
+def test_revision_runs_are_head_filtered_bounded_and_cached() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    revision_runs = _function_body(script, "revision_runs")
+
+    assert "head_sha=${HEAD_SHA}" in revision_runs
+    assert "--paginate" not in revision_runs
+    assert "REVISION_RUNS_CACHE_FILE" in revision_runs
+    assert "per_page=100" in revision_runs
+
+
+def test_native_polling_accepts_marker_backed_fallback_completion() -> None:
+    script = GATE.read_text(encoding="utf-8")
+    native_poll = script.split("if is_native_review_event; then", maxsplit=1)[1].split(
+        "if ! is_wait_label_event", maxsplit=1
+    )[0]
+
+    assert "has_native_clear_codex_evidence" in native_poll
+    assert "has_clear_codex_evidence" in native_poll
