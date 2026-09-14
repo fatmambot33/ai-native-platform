@@ -3,8 +3,8 @@ from pathlib import Path
 
 from ai_native import TRUSTED_AI_REVIEW_GATE_REFS
 
-REMEDIATED_GATE_REF = "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea"
-SUPERSEDED_GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
+REMEDIATED_GATE_REF = "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00"
+SUPERSEDED_GATE_REF = "0b5ce84c0d6560adffce4b1c32e08ba2a57de7ea"
 
 
 def test_canonical_gate_rejects_nonempty_check_name() -> None:
@@ -15,9 +15,9 @@ def test_canonical_gate_rejects_nonempty_check_name() -> None:
 
 
 def test_native_review_thread_status_is_captured_in_else_branch() -> None:
-    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+    text = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
     segment = text.split("has_any_native_clear_codex_evidence()", 1)[1]
-    segment = segment.split("has_native_clean_reaction()", 1)[0]
+    segment = segment.split("codex_failure_after()", 1)[0]
     assert "else\n      thread_status=$?" in segment
 
 
@@ -28,8 +28,9 @@ def test_trusted_gate_ref_is_only_remediated_commit() -> None:
     assert SUPERSEDED_GATE_REF not in workflow
 
 
-def test_native_review_reuse_is_bound_to_current_base_event() -> None:
+def test_native_review_reuse_is_bound_to_current_base_event_and_live_state() -> None:
     gate = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+    preflight = Path("actions/codex-review-gate/preflight.sh").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/codex-review.yml").read_text(encoding="utf-8")
     assert "types: [submitted, dismissed]" in workflow
     assert "EVENT_BASE_SHA=" in gate
@@ -37,9 +38,10 @@ def test_native_review_reuse_is_bound_to_current_base_event() -> None:
     assert "is_current_base_native_review_submission()" in gate
     assert '"$EVENT_BASE_SHA" == "$BASE_SHA"' in gate
     assert '"$EVENT_REVIEW_COMMIT_SHA" == "$HEAD_SHA"' in gate
-    body = gate.split("has_any_native_clear_codex_evidence() {", 1)[1].split("\n}", 1)[0]
+    body = preflight.split("has_any_native_clear_codex_evidence() {", 1)[1].split("\n}\n", 1)[0]
     assert "is_current_base_native_review_submission" in body
-    assert "has_any_native_matching_review" not in body
+    assert 'has_native_matching_review ""' in body
+    assert "has_native_clean_reaction" not in body
 
 
 def test_release_records_and_release_policy_are_codeowner_governed() -> None:
