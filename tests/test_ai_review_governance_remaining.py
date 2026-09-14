@@ -159,6 +159,28 @@ def test_review_gate_rejects_step_cli_env(tmp_path: Path) -> None:
     assert any("canonical gate step" in item.message for item in _findings(tmp_path))
 
 
+@pytest.mark.parametrize("scope", ["workflow", "job", "step"])
+def test_review_gate_rejects_imported_bash_functions(tmp_path: Path, scope: str) -> None:
+    env_line = '"BASH_FUNC_gh%%": "() { :; }"'
+    if scope == "workflow":
+        workflow = WORKFLOW.replace("on:\n", f"env:\n  {env_line}\non:\n", 1)
+    elif scope == "job":
+        workflow = WORKFLOW.replace(
+            "    runs-on: ubuntu-latest\n    permissions:\n",
+            f"    runs-on: ubuntu-latest\n    env:\n      {env_line}\n    permissions:\n",
+            1,
+        )
+    else:
+        workflow = WORKFLOW.replace(
+            f"      - uses: {ACTION}\n        with:\n",
+            f"      - uses: {ACTION}\n        env:\n          {env_line}\n        with:\n",
+            1,
+        )
+    _write_repository(tmp_path, workflow)
+
+    assert _findings(tmp_path)
+
+
 def test_review_gate_rejects_symlinked_codeowners(tmp_path: Path) -> None:
     _write_repository(tmp_path)
     codeowners = tmp_path / ".github" / "CODEOWNERS"

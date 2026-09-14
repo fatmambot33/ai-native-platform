@@ -481,7 +481,11 @@ def _has_forbidden_github_cli_env(value: Any) -> bool:
         return False
     for key in value:
         normalized = str(key).upper()
-        if normalized.startswith("GH_") or normalized in FORBIDDEN_GITHUB_CLI_ENV_KEYS:
+        if (
+            normalized.startswith("GH_")
+            or normalized in FORBIDDEN_GITHUB_CLI_ENV_KEYS
+            or (normalized.startswith("BASH_FUNC_") and normalized.endswith("%%"))
+        ):
             return True
     return False
 
