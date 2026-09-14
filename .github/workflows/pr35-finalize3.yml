@@ -1,9 +1,8 @@
-name: Publish validated PR35 code fixes
+name: Publish final PR35 governance remediation
 
 on:
   push:
     branches: [maintenance/pr35-finalize]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,63 +13,132 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: maintenance/pr35-finalize
+          ref: align/codex-governance
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install --disable-pip-version-check -e '.[dev]'
-      - name: Apply validated non-workflow fixes
+      - name: Apply remaining governance fixes
         shell: bash
         run: |
           python - <<'PY'
           import re
           from pathlib import Path
 
-          shell = Path('actions/codex-review-gate/codex-review-gate.sh')
-          text = shell.read_text(encoding='utf-8')
-          new_function = '''has_any_native_clear_codex_evidence() {
-            if ! has_any_native_matching_review; then
-              return 1
-            fi
-            if has_unresolved_codex_threads; then
-              echo "Native Codex review exists for current HEAD ${SHORT_SHA}, but unresolved Codex review threads remain."
-              return 1
-            else
-              local thread_status=$?
-              if [[ "$thread_status" -eq 1 ]]; then
-                return 0
-              fi
-              echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
-              return 1
-            fi
-          }'''
-          pattern = r'has_any_native_clear_codex_evidence\(\) \{.*?\n\}\n\nhas_native_clean_reaction\(\)'
-          text, count = re.subn(pattern, new_function + '\n\nhas_native_clean_reaction()', text, count=1, flags=re.S)
-          if count != 1:
-              raise SystemExit(f'native-review function replacements: {count}')
-          shell.write_text(text, encoding='utf-8')
-
           core = Path('ai_native.py')
           text = core.read_text(encoding='utf-8')
-          pattern = r'(    if any\(inputs\.get\(key\) != value for key, value in required_inputs\.items\(\)\):\n        return None\n)(    for key in \("timeout-seconds", "poll-seconds"\):)'
-          replacement = r'\1    if inputs.get("check-name") not in (None, ""):\n        return None\n\2'
-          text, count = re.subn(pattern, replacement, text, count=1)
+          pattern = r'def _codeowners_has_workflow_namespace_rule\(root: Path\) -> bool:\n.*?\n\ndef _unowned_workflows\(root: Path\) -> list\[str\]:'
+          replacement = '''def _codeowners_has_workflow_namespace_rule(root: Path) -> bool:
+              """Return whether the final CODEOWNERS rule protects every workflow path."""
+              codeowners = root / ".github" / "CODEOWNERS"
+              if _path_has_symlink_component(root, Path(".github/CODEOWNERS")) or not codeowners.is_file():
+                  return False
+              accepted = {
+                  "/.github/workflows/**",
+                  ".github/workflows/**",
+                  "/.github/workflows/",
+                  ".github/workflows/",
+              }
+              active_rules: list[tuple[str, list[str]]] = []
+              for raw_line in codeowners.read_text(encoding="utf-8").splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  parts = line.split()
+                  if parts:
+                      active_rules.append((parts[0], parts[1:]))
+              if not active_rules:
+                  return False
+              pattern, owners = active_rules[-1]
+              return (
+                  pattern in accepted
+                  and bool(owners)
+                  and all(_valid_codeowner(owner) for owner in owners)
+              )
+
+
+def _unowned_workflows(root: Path) -> list[str]:'''
+          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
           if count != 1:
-              raise SystemExit(f'gate input replacements: {count}')
+              raise SystemExit(f'workflow namespace function replacements: {count}')
           core.write_text(text, encoding='utf-8')
 
-          Path('tests/test_pr35_final_governance.py').write_text('''import inspect\nfrom pathlib import Path\n\nimport ai_native\n\n\ndef test_canonical_gate_rejects_nonempty_check_name() -> None:\n    source = inspect.getsource(ai_native._gate_ref)\n    assert 'inputs.get("check-name") not in (None, "")' in source\n\n\ndef test_native_review_thread_status_is_captured_in_else_branch() -> None:\n    text = Path("actions/codex-review-gate/codex-review-gate.sh").read_text(\n        encoding="utf-8"\n    )\n    segment = text.split("has_any_native_clear_codex_evidence()", 1)[1]\n    segment = segment.split("has_native_clean_reaction()", 1)[0]\n    assert "else\\n    local thread_status=$?" in segment\n''', encoding='utf-8')
+          validator = Path('validator/validate_standard.py')
+          text = validator.read_text(encoding='utf-8')
+          needle = '        ".github/CODEOWNERS",\n'
+          if '        ".github/dependabot.yml",\n' not in text:
+              if needle not in text:
+                  raise SystemExit('governed_paths insertion point missing')
+              text = text.replace(
+                  needle,
+                  needle + '        ".github/dependabot.yml",\n',
+                  1,
+              )
+          validator.write_text(text, encoding='utf-8')
+
+          codeowners = Path('.github/CODEOWNERS')
+          lines = codeowners.read_text(encoding='utf-8').splitlines()
+          namespace_rules = {
+              '/.github/workflows/**',
+              '.github/workflows/**',
+              '/.github/workflows/',
+              '.github/workflows/',
+          }
+          retained = [
+              line for line in lines
+              if not (line.split() and line.split()[0] in namespace_rules)
+          ]
+          retained.append('/.github/workflows/** @fatmambot33')
+          codeowners.write_text('\n'.join(retained) + '\n', encoding='utf-8')
+
+          test = Path('tests/test_pr35_followup_regressions.py')
+          text = test.read_text(encoding='utf-8')
+          if 'import ai_native\n' not in text:
+              text = text.replace('from pathlib import Path\n', 'from pathlib import Path\n\nimport ai_native\n', 1)
+          addition = '''\n\ndef test_workflow_namespace_ownership_cannot_be_reenabled_only_for_known_probe(tmp_path: Path) -> None:
+              """Require the namespace-wide workflow owner rule to be the final effective rule."""
+              github = tmp_path / ".github"
+              github.mkdir()
+              codeowners = github / "CODEOWNERS"
+              codeowners.write_text(
+                  "/.github/workflows/** @fatmambot33\\n"
+                  "/.github/workflows/**\\n"
+                  "/.github/workflows/__ai_native_unmatched_probe__.yml @fatmambot33\\n",
+                  encoding="utf-8",
+              )
+              assert not ai_native._codeowners_has_workflow_namespace_rule(tmp_path)
+              codeowners.write_text(
+                  codeowners.read_text(encoding="utf-8")
+                  + "/.github/workflows/** @fatmambot33\\n",
+                  encoding="utf-8",
+              )
+              assert ai_native._codeowners_has_workflow_namespace_rule(tmp_path)
+
+
+def test_dependabot_configuration_is_canonically_governed() -> None:
+              """Keep Dependabot in the canonical governed-path self-check."""
+              validator = (ROOT / "validator" / "validate_standard.py").read_text(encoding="utf-8")
+              assert '".github/dependabot.yml"' in validator
+'''
+          if 'test_workflow_namespace_ownership_cannot_be_reenabled_only_for_known_probe' not in text:
+              text += addition
+          test.write_text(text, encoding='utf-8')
           PY
-      - run: |
+      - name: Validate remediation
+        run: |
           ruff check .
           pytest
           python validator/validate_standard.py
+          python -m ai_native validate fixtures/passing/library.yaml --root fixtures --format json
+          bash -n actions/codex-review-gate/preflight.sh actions/codex-review-gate/codex-review-gate.sh
+          python tools/discover_improvements.py --budget 20
           git diff --check
-      - name: Commit only non-workflow files
+      - name: Commit and push PR head
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add ai_native.py actions/codex-review-gate/codex-review-gate.sh tests/test_pr35_final_governance.py
-          git commit -m 'fix: close final Codex gate code gaps'
-          git push origin HEAD:maintenance/pr35-finalize
+          git add ai_native.py validator/validate_standard.py .github/CODEOWNERS tests/test_pr35_followup_regressions.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: close final PR35 governance gaps'
+          git push origin HEAD:align/codex-governance
