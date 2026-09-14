@@ -311,6 +311,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
                         str(ISSUE_FORM),
                     )
                 )
+            )
         if "about" in issue_form:
             findings.append(
                 Finding(
@@ -411,6 +412,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         "consumers/registry.yaml",
         "docs/GOVERNANCE.md",
         "docs/AI_REVIEW_GOVERNANCE.md",
+        "docs/RELEASE.md",
         "AGENTS.md",
         "SECURITY.md",
         "CHANGELOG.md",
