@@ -24,8 +24,9 @@ def test_revision_run_cache_is_published_atomically() -> None:
     assert preflight.count('rm -f "$tmp_cache"') >= 2
 
 
-
-def test_workflow_namespace_owner_rule_rejects_later_ownerless_override(tmp_path: Path) -> None:
+def test_workflow_namespace_owner_rule_rejects_later_ownerless_override(
+    tmp_path: Path,
+) -> None:
     """Reject a predictable-probe bypass after an ownerless workflow override."""
     github = tmp_path / ".github"
     github.mkdir(exist_ok=True)
@@ -44,6 +45,16 @@ def test_workflow_namespace_owner_rule_rejects_later_ownerless_override(tmp_path
         encoding="utf-8",
     )
     assert ai_native._codeowners_has_workflow_namespace_rule(tmp_path)
+
+
+def test_repository_keeps_workflow_namespace_rule_last() -> None:
+    """Keep the canonical repository stricter than the minimum valid precedence model."""
+    active_rules = [
+        line.strip()
+        for line in (ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert active_rules[-1] == "/.github/workflows/** @fatmambot33"
 
 
 def test_dependabot_configuration_is_canonically_governed() -> None:
