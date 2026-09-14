@@ -62,8 +62,9 @@ if [[ "$MODE" == "request-and-wait" ]]; then
   event_name="${GITHUB_EVENT_NAME:-}"
   event_action="$(jq -r '.action // empty' "$GITHUB_EVENT_PATH")"
   event_label="$(jq -r '.label.name // empty' "$GITHUB_EVENT_PATH")"
-  if [[ "$event_name" != "pull_request_target" || "$event_action" != "labeled" || "$event_label" != "$REQUEST_LABEL" ]]; then
-    echo "::error::request-and-wait may consume review quota only on an explicit ${REQUEST_LABEL} label event."
+  event_draft="$(jq -r '.pull_request.draft // true' "$GITHUB_EVENT_PATH")"
+  if [[ "$event_name" != "pull_request_target" || "$event_action" != "labeled" || "$event_label" != "$REQUEST_LABEL" || "$event_draft" != "false" ]]; then
+    echo "::error::request-and-wait may consume review quota only on an explicit ${REQUEST_LABEL} label event for a non-draft PR."
     exit 1
   fi
 fi
@@ -74,8 +75,17 @@ fi
 # shellcheck disable=SC1090
 source <(sed '/^case "$MODE" in/,$d' "$GATE_SCRIPT")
 
+is_request_label_event() {
+  local draft
+  draft="$(jq -r '.pull_request.draft // true' "$GITHUB_EVENT_PATH")"
+  [[ "$GITHUB_EVENT_NAME" == "pull_request_target" \
+    && "$EVENT_ACTION" == "labeled" \
+    && "$EVENT_LABEL" == "$REQUEST_LABEL" \
+    && "$draft" == "false" ]]
+}
+
 revision_runs() {
-  local workflow_id response now modified cache_ttl
+  local workflow_id now modified cache_ttl
   cache_ttl="$POLL_SECONDS"
   if (( cache_ttl > 1 )); then
     cache_ttl=$((cache_ttl - 1))
@@ -91,19 +101,17 @@ revision_runs() {
   if ! workflow_id="$(current_workflow_id)"; then
     return 2
   fi
-  if ! response="$(
-    gh api \
+  if ! gh api --paginate \
       -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/actions/workflows/${workflow_id}/runs?head_sha=${HEAD_SHA}&per_page=100"
-  )"; then
+      "repos/${REPO}/actions/workflows/${workflow_id}/runs?head_sha=${HEAD_SHA}&per_page=100" \
+      --jq '.workflow_runs[]' | jq -s '.' >"$REVISION_RUNS_CACHE_FILE"; then
     echo "::error::Unable to query governance workflow runs for the current revision."
     return 2
   fi
-  if ! jq -e '.workflow_runs | type == "array"' <<<"$response" >/dev/null; then
+  if ! jq -e 'type == "array"' "$REVISION_RUNS_CACHE_FILE" >/dev/null; then
     echo "::error::GitHub returned malformed governance workflow-run data."
     return 2
   fi
-  jq '.workflow_runs' <<<"$response" >"$REVISION_RUNS_CACHE_FILE"
   cat "$REVISION_RUNS_CACHE_FILE"
 }
 
@@ -156,6 +164,95 @@ has_native_clean_reaction() {
   return 2
 }
 
+# Terminal bot comments are accepted only when they carry the exact revision
+# marker. Uncorrelated delayed failures from an older HEAD/base are ignored and
+# the current request remains pending until evidence arrives or the gate times out.
+codex_failure_after() {
+  local since="$1"
+  local comments body
+  if ! comments="$(api_list "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")"; then
+    echo "::error::Unable to inspect Codex review-request failures."
+    return 2
+  fi
+  body="$(
+    jq -r \
+      --arg since "$since" \
+      --arg marker "$MARKER" \
+      '[
+        .[]
+        | select(
+            (.user.login // "") == "chatgpt-codex-connector"
+            or (.user.login // "") == "chatgpt-codex-connector[bot]"
+          )
+        | select((.created_at // "") >= $since)
+        | select((.body // "") | contains($marker))
+        | select(
+            ((.body // "") | contains("reached your Codex usage limits for code reviews"))
+            or ((.body // "") | startswith("Codex Review: Something went wrong"))
+          )
+        | .body
+      ] | first // empty' \
+      <<<"$comments"
+  )"
+  [[ -n "$body" ]] || return 1
+  if [[ "$body" == *"usage limits for code reviews"* ]]; then
+    echo "::error::Codex code-review quota is unavailable. No automatic retry will be attempted."
+  else
+    echo "::error::Codex reported a terminal review-request failure. No automatic retry will be attempted."
+  fi
+  return 0
+}
+
+request_review() {
+  local native_status dismissal_status failure_status
+  NATIVE_EVIDENCE_REUSED="false"
+  if has_any_native_clear_codex_evidence; then
+    NATIVE_EVIDENCE_REUSED="true"
+    echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}; no fallback request needed."
+    return 0
+  else
+    native_status=$?
+  fi
+  [[ "$native_status" -eq 1 ]] || return 2
+
+  find_bot_trigger_comment
+  if [[ -n "$COMMENT_ID" ]]; then
+    if has_dismissed_matching_review; then
+      echo "Matching Codex review was dismissed; this explicit ${REQUEST_LABEL} event authorizes one replacement review."
+    else
+      dismissal_status=$?
+      if [[ "$dismissal_status" -ne 1 ]]; then
+        echo "::error::Unable to prove whether the matching Codex review was dismissed."
+        return 2
+      fi
+      if codex_failure_after "$COMMENT_CREATED_AT" >/dev/null; then
+        echo "Prior Codex request failed; this explicit ${REQUEST_LABEL} event authorizes one retry."
+      else
+        failure_status=$?
+        if [[ "$failure_status" -eq 1 ]]; then
+          echo "A Codex review request for current HEAD ${SHORT_SHA} is still pending; preserving quota."
+          return 0
+        fi
+        return 2
+      fi
+    fi
+  fi
+
+  local body response
+  body="$(
+    printf '@codex review\n\nQuota-aware merge-ready AI Native Platform gate for `%s`.\n%s\n%s\n' \
+      "$SHORT_SHA" "$MARKER" "$RUN_MARKER"
+  )"
+  response="$(
+    gh api --method POST \
+      "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+      -f body="$body"
+  )"
+  COMMENT_ID="$(jq -r '.id' <<<"$response")"
+  COMMENT_CREATED_AT="$(jq -r '.created_at' <<<"$response")"
+  echo "Requested one Codex review for merge-ready HEAD ${SHORT_SHA}."
+}
+
 complete_status() {
   local state="$1"
   if [[ "$state" == "success" ]]; then
@@ -165,6 +262,19 @@ complete_status() {
   publish_status "$state"
   STATUS_COMPLETED="true"
 }
+
+on_exit_with_request_label() {
+  local status=$?
+  clear_request_label || true
+  if [[ "$status" -ne 0 && "$STATUS_STARTED" == "true" && "$STATUS_COMPLETED" != "true" ]]; then
+    complete_status failure || true
+  fi
+  return "$status"
+}
+
+if [[ "$MODE" == "request-and-wait" ]]; then
+  trap on_exit_with_request_label EXIT
+fi
 
 # Execute the canonical gate flow with the hardened runtime overrides above.
 # shellcheck disable=SC1090
