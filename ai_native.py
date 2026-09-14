@@ -53,6 +53,7 @@ AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
         "70a27f1691c870f1f5423698b2864edd96fee98c",
+        "b3b6b1633fd4db8759bb603984f84c1c74227ec3",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
@@ -440,7 +441,6 @@ def _uses_review_wait_events(job: Mapping[str, Any]) -> bool:
         event_guard,
         draft_guard,
         reverse_guard,
-        "github.event.pull_request.draft == false",
     }
 
 
