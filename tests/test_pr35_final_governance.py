@@ -46,3 +46,14 @@ def test_release_records_and_release_policy_are_codeowner_governed() -> None:
     assert '"CHANGELOG.md"' in validator
     assert '"RELEASE_NOTES.md"' in validator
     assert '"docs/RELEASE.md"' in validator
+
+
+
+def test_security_and_distribution_evidence_are_codeowner_governed() -> None:
+    codeowners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
+    validator = Path("validator/validate_standard.py").read_text(encoding="utf-8")
+
+    assert "/docs/SECURITY_EVIDENCE.md @fatmambot33" in codeowners
+    assert "/docs/DISTRIBUTION.md @fatmambot33" in codeowners
+    assert '"docs/SECURITY_EVIDENCE.md"' in validator
+    assert '"docs/DISTRIBUTION.md"' in validator

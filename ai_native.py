@@ -551,6 +551,14 @@ def _gate_optional_input(job: Mapping[str, Any], key: str) -> Any:
     return inputs.get(key, "")
 
 
+def _safe_review_context(value: Any) -> bool:
+    """Return whether an optional review context is a non-secret literal marker."""
+    return value == "" or (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value) is not None
+    )
+
+
 def _permission_declaration_is_forbidden(value: Any) -> bool:
     """Return whether one permissions declaration grants spoofable write APIs."""
     if isinstance(value, str):
@@ -931,7 +939,10 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
         )
 
     concurrency = workflow.get("concurrency", {})
-    expected_group = "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
+    expected_group = (
+        "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
+        "-${{ github.event.pull_request.head.sha }}"
+    )
     if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not False:
         failures.append("concurrency must preserve active review polling")
     elif concurrency.get("group") != expected_group:
@@ -949,10 +960,14 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
             failures.append(f"{label} job uses an untrusted gate revision {reference}")
     if request_ref is not None and wait_ref is not None and request_ref != wait_ref:
         failures.append("request and wait jobs must pin the same gate revision")
-    if _gate_optional_input(request, "review-context") != _gate_optional_input(
-        wait, "review-context"
-    ):
+    request_context = _gate_optional_input(request, "review-context")
+    wait_context = _gate_optional_input(wait, "review-context")
+    if request_context != wait_context:
         failures.append("request and wait jobs must use the same review-context")
+    elif not _safe_review_context(request_context):
+        failures.append(
+            "review-context must be omitted or a short non-expression literal marker"
+        )
 
     if _has_forbidden_write_permissions(workflow):
         failures.append("workflow must not grant statuses/checks write or write-all permissions")

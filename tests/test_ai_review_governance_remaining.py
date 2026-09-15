@@ -16,6 +16,10 @@ from ai_native import (
 
 GATE_REF = "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
+CONCURRENCY_GROUP = (
+    "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
+    "-${{ github.event.pull_request.head.sha }}"
+)
 WAIT_CONDITION = (
     "(github.event_name == 'pull_request' || "
     "github.event_name == 'pull_request_review' || "
@@ -35,7 +39,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: codex-review-${{{{ github.event_name }}}}-${{{{ github.event.pull_request.number }}}}
+  group: {CONCURRENCY_GROUP}
   cancel-in-progress: false
 jobs:
   request:
@@ -315,6 +319,18 @@ def test_review_gate_accepts_matching_review_contexts(tmp_path: Path) -> None:
     )
     _write_repository(tmp_path, workflow)
     assert not _findings(tmp_path)
+
+
+def test_review_gate_rejects_expression_review_contexts(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "          request-label: codex:review\n",
+        "          request-label: codex:review\n"
+        "          review-context: ${{ github.token }}\n",
+        2,
+    )
+    _write_repository(tmp_path, workflow)
+
+    assert any("non-expression literal" in item.message for item in _findings(tmp_path))
 
 
 def test_review_gate_rejects_wait_job_without_explicit_read_only_event_guard(

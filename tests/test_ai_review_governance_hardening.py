@@ -8,6 +8,10 @@ from ai_native import _codeowners_effective_owners, _single_ai_review_workflow_f
 
 GATE_REF = "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00"
 ACTION = f"fatmambot33/ai-native-platform/actions/codex-review-gate@{GATE_REF}"
+CONCURRENCY_GROUP = (
+    "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
+    "-${{ github.event.pull_request.head.sha }}"
+)
 WAIT_CONDITION = (
     "(github.event_name == 'pull_request' || "
     "github.event_name == 'pull_request_review' || "
@@ -27,7 +31,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: codex-review-${{{{ github.event_name }}}}-${{{{ github.event.pull_request.number }}}}
+  group: {CONCURRENCY_GROUP}
   cancel-in-progress: false
 jobs:
   request:
@@ -167,6 +171,15 @@ def test_review_gate_requires_evaluated_concurrency_pr_expression(tmp_path: Path
         "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}",
         "codex-review-${{ github.event_name }}-github.event.pull_request.number",
     )
+    _write_repository(tmp_path, workflow)
+
+    findings = _findings(tmp_path)
+
+    assert any("canonical evaluated concurrency group" in item.message for item in findings)
+
+
+def test_review_gate_requires_evaluated_concurrency_head_expression(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace("-${{ github.event.pull_request.head.sha }}", "")
     _write_repository(tmp_path, workflow)
 
     findings = _findings(tmp_path)
