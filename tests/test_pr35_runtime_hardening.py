@@ -35,15 +35,16 @@ def test_native_exact_revision_evidence_does_not_use_pr_reactions() -> None:
     assert "issues/${PR_NUMBER}/reactions" not in block
 
 
-def test_submitted_review_event_rechecks_live_review_state() -> None:
+def test_submitted_review_event_rechecks_specific_live_review_state() -> None:
     script = PREFLIGHT.read_text(encoding="utf-8")
     block = _block(script, "has_any_native_clear_codex_evidence")
 
     assert "is_current_base_native_review_submission" in block
-    assert 'has_native_matching_review ""' in block
-    assert block.index("is_current_base_native_review_submission") < block.index(
-        'has_native_matching_review ""'
-    )
+    assert "event_review_id=" in block
+    assert 'repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100' in block
+    assert '.id == $review_id' in block
+    assert '(.state // "") != "DISMISSED"' in block
+    assert '(.commit_id // "") == $head' in block
     assert "remains live and non-dismissed" in block
 
 
