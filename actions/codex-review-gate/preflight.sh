@@ -24,7 +24,6 @@ if (( POLL_SECONDS > TIMEOUT_SECONDS )); then
 fi
 export CODEX_REVIEW_POLL_SECONDS="$POLL_SECONDS"
 
-# Always bind review evidence to both the exact base revision and any caller context.
 export CODEX_REVIEW_CONTEXT="${BASE_SHA}:${CUSTOM_CONTEXT}"
 
 verify_codeowners() {
@@ -73,10 +72,6 @@ if [[ "$MODE" == "request-and-wait" ]]; then
   fi
 fi
 
-# Load the canonical gate definitions without executing its control flow. The
-# overrides below tighten runtime invariants while keeping one implementation of
-# the request/review/thread semantics.
-# shellcheck disable=SC1090
 source <(sed '/^case "$MODE" in/,$d' "$GATE_SCRIPT")
 
 is_request_label_event() {
@@ -91,20 +86,13 @@ is_request_label_event() {
 revision_runs() {
   local workflow_id now modified cache_ttl tmp_cache
   cache_ttl="$POLL_SECONDS"
-  if (( cache_ttl > 1 )); then
-    cache_ttl=$((cache_ttl - 1))
-  fi
+  if (( cache_ttl > 1 )); then cache_ttl=$((cache_ttl - 1)); fi
   if [[ -s "$REVISION_RUNS_CACHE_FILE" ]]; then
     now="$(date +%s)"
     modified="$(stat -c %Y "$REVISION_RUNS_CACHE_FILE" 2>/dev/null || printf '0')"
-    if (( now - modified < cache_ttl )); then
-      cat "$REVISION_RUNS_CACHE_FILE"
-      return 0
-    fi
+    if (( now - modified < cache_ttl )); then cat "$REVISION_RUNS_CACHE_FILE"; return 0; fi
   fi
-  if ! workflow_id="$(current_workflow_id)"; then
-    return 2
-  fi
+  if ! workflow_id="$(current_workflow_id)"; then return 2; fi
   tmp_cache="${REVISION_RUNS_CACHE_FILE}.tmp.$$"
   rm -f "$tmp_cache"
   if ! gh api --paginate \
@@ -124,14 +112,23 @@ revision_runs() {
   cat "$REVISION_RUNS_CACHE_FILE"
 }
 
-# Reusable native evidence must come from a live, non-dismissed exact-HEAD review
-# plus server-verifiable workflow-run provenance. PR-level reactions are not
-# revision-addressed, so they are deliberately excluded from this success path.
 has_any_native_clear_codex_evidence() {
   local activation activation_status thread_status run_status review_status
 
   if is_current_base_native_review_submission; then
-    if has_native_matching_review ""; then
+    local event_review_id reviews
+    event_review_id="$(jq -r '.review.id // empty' "$GITHUB_EVENT_PATH")"
+    if [[ -z "$event_review_id" ]]; then
+      echo "::error::Submitted-review event is missing its review ID."
+      return 2
+    fi
+    if ! reviews="$(api_list "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"; then
+      echo "::error::Unable to revalidate the submitted Codex review object."
+      return 2
+    fi
+    if jq -e --argjson review_id "$event_review_id" --arg head "$HEAD_SHA" \
+      "any(.[]; (.id == \$review_id) and (${is_codex_login}) and ((.state // \"\") != \"DISMISSED\") and ((.commit_id // \"\") == \$head))" \
+      <<<"$reviews" >/dev/null; then
       :
     else
       review_status=$?
@@ -144,17 +141,13 @@ has_any_native_clear_codex_evidence() {
       return 1
     else
       thread_status=$?
-      if [[ "$thread_status" -eq 1 ]]; then
-        return 0
-      fi
+      if [[ "$thread_status" -eq 1 ]]; then return 0; fi
       echo "::error::Unable to prove that all Codex review threads are resolved for current HEAD ${SHORT_SHA}."
       return 2
     fi
   fi
 
-  if activation="$(revision_activation_created_at)"; then
-    :
-  else
+  if activation="$(revision_activation_created_at)"; then :; else
     activation_status=$?
     [[ "$activation_status" -eq 1 ]] && return 1
     return 2
@@ -172,11 +165,7 @@ has_any_native_clear_codex_evidence() {
   fi
 
   if has_trusted_native_review_run; then
-    if has_native_matching_review "$activation"; then
-      return 0
-    else
-      review_status=$?
-    fi
+    if has_native_matching_review "$activation"; then return 0; else review_status=$?; fi
     [[ "$review_status" -eq 1 ]] || return 2
   else
     run_status=$?
@@ -185,9 +174,6 @@ has_any_native_clear_codex_evidence() {
   return 1
 }
 
-# Terminal bot comments are accepted only when they carry the exact revision
-# marker. Uncorrelated delayed failures from an older HEAD/base are ignored and
-# the current request remains pending until evidence arrives or the gate times out.
 codex_failure_after() {
   local since="$1"
   local comments body
@@ -195,26 +181,7 @@ codex_failure_after() {
     echo "::error::Unable to inspect Codex review-request failures."
     return 2
   fi
-  body="$(
-    jq -r \
-      --arg since "$since" \
-      --arg marker "$MARKER" \
-      '[
-        .[]
-        | select(
-            (.user.login // "") == "chatgpt-codex-connector"
-            or (.user.login // "") == "chatgpt-codex-connector[bot]"
-          )
-        | select((.created_at // "") >= $since)
-        | select((.body // "") | contains($marker))
-        | select(
-            ((.body // "") | contains("reached your Codex usage limits for code reviews"))
-            or ((.body // "") | startswith("Codex Review: Something went wrong"))
-          )
-        | .body
-      ] | first // empty' \
-      <<<"$comments"
-  )"
+  body="$(jq -r --arg since "$since" --arg marker "$MARKER" '[.[] | select((.user.login // "") == "chatgpt-codex-connector" or (.user.login // "") == "chatgpt-codex-connector[bot]") | select((.created_at // "") >= $since) | select((.body // "") | contains($marker)) | select(((.body // "") | contains("reached your Codex usage limits for code reviews")) or ((.body // "") | startswith("Codex Review: Something went wrong"))) | .body] | first // empty' <<<"$comments")"
   [[ -n "$body" ]] || return 1
   if [[ "$body" == *"usage limits for code reviews"* ]]; then
     echo "::error::Codex code-review quota is unavailable. No automatic retry will be attempted."
@@ -231,9 +198,7 @@ request_review() {
     NATIVE_EVIDENCE_REUSED="true"
     echo "Reusing completed native Codex review for current HEAD ${SHORT_SHA}; no fallback request needed."
     return 0
-  else
-    native_status=$?
-  fi
+  else native_status=$?; fi
   [[ "$native_status" -eq 1 ]] || return 2
 
   find_bot_trigger_comment
@@ -260,15 +225,8 @@ request_review() {
   fi
 
   local body response
-  body="$(
-    printf '@codex review\n\nQuota-aware merge-ready AI Native Platform gate for `%s`.\n%s\n%s\n' \
-      "$SHORT_SHA" "$MARKER" "$RUN_MARKER"
-  )"
-  response="$(
-    gh api --method POST \
-      "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-      -f body="$body"
-  )"
+  body="$(printf '@codex review\n\nQuota-aware merge-ready AI Native Platform gate for `%s`.\n%s\n%s\n' "$SHORT_SHA" "$MARKER" "$RUN_MARKER")"
+  response="$(gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$body")"
   COMMENT_ID="$(jq -r '.id' <<<"$response")"
   COMMENT_CREATED_AT="$(jq -r '.created_at' <<<"$response")"
   echo "Requested one Codex review for merge-ready HEAD ${SHORT_SHA}."
@@ -276,9 +234,7 @@ request_review() {
 
 complete_status() {
   local state="$1"
-  if [[ "$state" == "success" ]]; then
-    verify_live_revision
-  fi
+  if [[ "$state" == "success" ]]; then verify_live_revision; fi
   [[ "$STATUS_STARTED" == "true" ]] || return 0
   publish_status "$state"
   STATUS_COMPLETED="true"
@@ -287,16 +243,9 @@ complete_status() {
 on_exit_with_request_label() {
   local status=$?
   clear_request_label || true
-  if [[ "$status" -ne 0 && "$STATUS_STARTED" == "true" && "$STATUS_COMPLETED" != "true" ]]; then
-    complete_status failure || true
-  fi
+  if [[ "$status" -ne 0 && "$STATUS_STARTED" == "true" && "$STATUS_COMPLETED" != "true" ]]; then complete_status failure || true; fi
   return "$status"
 }
 
-if [[ "$MODE" == "request-and-wait" ]]; then
-  trap on_exit_with_request_label EXIT
-fi
-
-# Execute the canonical gate flow with the hardened runtime overrides above.
-# shellcheck disable=SC1090
+if [[ "$MODE" == "request-and-wait" ]]; then trap on_exit_with_request_label EXIT; fi
 source <(sed -n '/^case "$MODE" in/,$p' "$GATE_SCRIPT")
