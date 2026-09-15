@@ -11,6 +11,8 @@
 /consumers/registry.yaml @fatmambot33
 /docs/GOVERNANCE.md @fatmambot33
 /docs/AI_REVIEW_GOVERNANCE.md @fatmambot33
+/docs/SECURITY_EVIDENCE.md @fatmambot33
+/docs/DISTRIBUTION.md @fatmambot33
 /docs/RELEASE.md @fatmambot33
 /pyproject.toml @fatmambot33
 /tools/release_artifacts.py @fatmambot33
