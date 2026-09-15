@@ -42,9 +42,9 @@ def test_submitted_review_event_rechecks_specific_live_review_state() -> None:
     assert "is_current_base_native_review_submission" in block
     assert "event_review_id=" in block
     assert 'repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100' in block
-    assert '.id == $review_id' in block
-    assert '(.state // "") != "DISMISSED"' in block
-    assert '(.commit_id // "") == $head' in block
+    assert r'.id == \$review_id' in block
+    assert r'(.state // \"\") != \"DISMISSED\"' in block
+    assert r'(.commit_id // \"\") == \$head' in block
     assert "remains live and non-dismissed" in block
 
 
