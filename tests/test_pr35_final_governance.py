@@ -31,9 +31,9 @@ def test_native_review_reuse_is_bound_to_current_base_event_and_live_state() -> 
     body = preflight.split("has_any_native_clear_codex_evidence() {", 1)[1].split("\n}\n", 1)[0]
     assert "is_current_base_native_review_submission" in body
     assert "event_review_id=" in body
-    assert '.id == $review_id' in body
-    assert '(.state // "") != "DISMISSED"' in body
-    assert '(.commit_id // "") == $head' in body
+    assert r'.id == \$review_id' in body
+    assert r'(.state // \"\") != \"DISMISSED\"' in body
+    assert r'(.commit_id // \"\") == \$head' in body
     assert "has_native_clean_reaction" not in body
 
 
