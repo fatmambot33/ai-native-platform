@@ -22,7 +22,7 @@ The `pull_request_target` job is loaded from the protected base branch. It never
 
 The `pull_request` job is the normal required `codex-review` check. A `pull_request_review` dismissal event runs the same read-only gate again so explicitly dismissed Codex evidence cannot leave a previously green result trusted. Both paths evaluate exactly `github.event.pull_request.head.sha` while ordinary CI runs in parallel.
 
-Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR-scoped concurrency still separates event classes and pull requests, but cancellation is disabled. A merge-ready polling run therefore remains active when another event for the same pull request arrives.
+Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR/HEAD-scoped concurrency still separates event classes, pull requests, and revisions, while cancellation is disabled. A merge-ready polling run therefore remains active when another event for the same revision arrives, without blocking a newer HEAD behind an obsolete wait.
 
 The required result is therefore not a raw commit status created through `statuses: write` or `checks: write`; those write scopes are intentionally absent from the governance workflow.
 
@@ -87,7 +87,7 @@ Both jobs need `actions: read` to verify GitHub-hosted workflow-run provenance, 
 
 `evidence.paths.ai_review_workflow` is opt-in for version-one manifests. Existing v1 manifests do not become invalid merely because they predate this governance feature.
 
-When a repository declares `ai_review_workflow`, conformance validation verifies that it points to a real `.github/workflows/*.yml` or `.yaml` file with current-HEAD and review-dismissal event coverage, immutable canonical action pins, request/wait separation, evaluated PR/event-scoped cancellation, positive numeric timing overrides when supplied, no job-level timeout/concurrency overrides, exact least-privilege permissions, executable runners, a stable `codex-review` check name, no writable status/check API, and effective CODEOWNERS protection for the full workflow namespace plus `.github/CODEOWNERS` itself.
+When a repository declares `ai_review_workflow`, conformance validation verifies that it points to a real `.github/workflows/*.yml` or `.yaml` file with current-HEAD and review-dismissal event coverage, immutable canonical action pins, request/wait separation, evaluated PR/event/HEAD-scoped cancellation, positive numeric timing overrides when supplied, no job-level timeout/concurrency overrides, exact least-privilege permissions, executable runners, a stable `codex-review` check name, no writable status/check API, and effective CODEOWNERS protection for the full workflow namespace plus `.github/CODEOWNERS` itself. Optional `review-context` values must be non-expression literals so request markers can never disclose evaluated GitHub tokens or secrets.
 
 CODEOWNERS matching follows root-anchor semantics: a leading `/` anchors the rule to the repository root, and the effective last matching non-comment rule determines ownership. Commented rules, ownerless final overrides, symlinked CODEOWNERS paths, and files at or above GitHub's 3 MB CODEOWNERS limit do not satisfy governance protection.
 
@@ -127,11 +127,12 @@ after the base advances. The reference repository enforces this rule.
 
 When repository-level Codex automatic review is enabled, opening a non-draft
 pull request or marking a draft ready already starts Codex. The required wait
-job reuses that native review and treats the current GitHub workflow run's
-server timestamp as the activation boundary. It accepts only exact-current-HEAD
-Codex review evidence created after that boundary (or a clean Codex PR reaction
-created after it), and it never emits a second `@codex review` request for the
-same checkpoint.
+job reuses only a server-verifiable, live, non-dismissed exact-current-HEAD
+Codex review object with trusted workflow-run provenance. PR-level reactions
+are not revision-addressed and are therefore not reusable native evidence. A
+reaction-only result must complete through the trusted marker-backed fallback
+request path, whose request comment and workflow run are bound to the exact
+HEAD/base checkpoint.
 
 The one-shot `codex:review` label remains an explicit fallback or retry path
 when no native review is available or an earlier request ended terminally. Both
