@@ -31,3 +31,8 @@ python -m build
 - Use exact release tags or commit SHAs in examples.
 - Never weaken evidence requirements merely to make a repository pass.
 - Require human approval for breaking, security, credential, permission, public API, and release changes.
+
+- Treat Codex code review as asynchronous and quota-limited: batch fixes,
+  rely on deterministic checks during iteration, request a fresh review only
+  for a merge-ready exact HEAD/base checkpoint, and never auto-retry a failed
+  or quota-exhausted review.

@@ -503,6 +503,10 @@
             "examples": {
               "$ref": "#/$defs/pathValue"
             },
+            "ai_review_workflow": {
+              "type": "string",
+              "minLength": 1
+            },
             "security_evidence": {
               "$ref": "#/$defs/pathValue"
             },

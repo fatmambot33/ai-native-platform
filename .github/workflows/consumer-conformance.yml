@@ -43,14 +43,16 @@ jobs:
       matrix: ${{ fromJSON(needs.registry.outputs.matrix) }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout standard
+      - name: Checkout release candidate
         uses: actions/checkout@v4
+        with:
+          path: release-candidate
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install conformance CLI
-        run: python -m pip install --disable-pip-version-check .
+      - name: Install release-candidate conformance CLI
+        run: python -m pip install --disable-pip-version-check ./release-candidate
       - name: Checkout consumer
         uses: actions/checkout@v4
         with:

@@ -1,0 +1,148 @@
+# AI Review Governance
+
+AI review is a merge governance control for AI-native repositories, not a post-merge advisory step.
+
+## Required invariant
+
+A protected pull request must not merge until all of the following are true:
+
+1. The repository's normal CI, validation, and security gates pass.
+2. Codex has completed a review of the pull request's current HEAD commit.
+3. Every actionable inline review thread is resolved.
+4. Any new commit invalidates the previous AI review and triggers a review of the new HEAD.
+5. Dismissing the matching Codex review re-runs the gate for the same current HEAD and invalidates the prior successful result.
+
+Human approval is not required solely to satisfy this invariant. Repositories may separately require human decisions for changes covered by their governance policy.
+
+## Trusted execution model
+
+The reference `.github/workflows/codex-review.yml` deliberately separates review **requesting** from the required merge **check**.
+
+The `pull_request_target` job is loaded from the protected base branch. It never checks out pull-request code and has the only write capability: `issues: write`, used to post the HEAD-scoped `@codex review` request.
+
+The `pull_request` job is the normal required `codex-review` check. A `pull_request_review` dismissal event runs the same read-only gate again so explicitly dismissed Codex evidence cannot leave a previously green result trusted. Both paths evaluate exactly `github.event.pull_request.head.sha` while ordinary CI runs in parallel.
+
+Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR/HEAD/base-scoped concurrency still separates event classes, pull requests, and revisions, while cancellation is disabled. A merge-ready polling run therefore remains active when another event for the same revision arrives, without blocking a newer HEAD or base behind an obsolete wait.
+
+The required result is therefore not a raw commit status created through `statuses: write` or `checks: write`; those write scopes are intentionally absent from the governance workflow.
+
+## Governance-code protection
+
+A required pull-request job is only trustworthy if a pull request cannot silently redefine the workflow that produces it. Repositories adopting this model must protect these governance surfaces with CODEOWNERS:
+
+```text
+/.github/workflows/** @OWNER
+/.github/CODEOWNERS @OWNER
+```
+
+The framework repository additionally protects its reusable gate action:
+
+```text
+/actions/codex-review-gate/** @OWNER
+```
+
+Enable **Require review from Code Owners** in the protected-main pull-request rule and also enable **Dismiss stale pull request approvals when new commits are pushed** (or an equivalent rule that requires approval of the most recent reviewable push). Without a current-push approval rule, an approval for an earlier benign governance revision can remain valid after the PR-loaded gate is changed.
+
+The CODEOWNERS patterns are intentionally narrow. This reference repository protects workflows, governance code, `.github/scripts/**`, `tools/**`, and the consumer registry that pins executable validation revisions, while ordinary source, documentation, and test changes remain outside those code-owner rules. Governance and privileged automation changes are exceptional and require a fresh code-owner review or an explicitly authorized repository-owner bypass.
+
+## Reference action
+
+`actions/codex-review-gate` accepts only the real Codex connector identities, rejects dismissed reviews, matches submitted reviews by the full GitHub review `commit_id`, paginates GitHub API reads, and never treats an older review as sufficient for a newer HEAD.
+
+A clean reaction normally comes from the HEAD-specific request created by the trusted request job. The request must remain unedited (`created_at == updated_at`), contain the full current head/base marker, and carry the request workflow run ID. The wait gate verifies that run through GitHub's server API: it must be the same workflow ID and workflow path, must have been triggered by `pull_request_target`, and GitHub must associate it with the exact pull request number, HEAD SHA, and base SHA before the request reaction is trusted. This avoids using mutable pull-request timestamps or contributor-controlled commit dates as freshness evidence.
+
+Collaborator-authored bootstrap markers are not trusted as review evidence because GitHub review objects do not carry a server-verifiable base SHA. Until the trusted `pull_request_target` request workflow is present on the default branch, an exact-HEAD native Codex review may be used only through the native-review path; marker-backed evidence requires bot-authored requests tied to server-verifiable workflow-run provenance.
+
+## GitHub protection
+
+The protected branch should require the repository's normal CI/validation checks plus the `codex-review` job, and should enable **Require conversation resolution before merging**, **Require review from Code Owners**, and **Dismiss stale pull request approvals when new commits are pushed** (or the equivalent latest-push approval rule).
+
+For a solo maintainer, the general required approving-review count can remain zero. Code-owner review applies only when one of the narrowly protected governance files changes; repository-owner bypass remains an explicit exceptional path where the platform permits it.
+
+The governance workflow permissions are intentionally split:
+
+```yaml
+# default and required PR job
+permissions:
+  contents: read
+
+# trusted pull_request_target request job only
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+# required pull_request / pull_request_review wait job
+permissions:
+  actions: read
+  contents: read
+  issues: read
+  pull-requests: read
+```
+
+Both jobs need `actions: read` to verify GitHub-hosted workflow-run provenance, including in private repositories. The required `codex-review` job has no write scope. Job-level and step-level `continue-on-error` are forbidden so a missing, timed-out, or failed review cannot be converted into a successful governance result.
+
+## Evidence contract
+
+`evidence.paths.ai_review_workflow` is opt-in for version-one manifests. Existing v1 manifests do not become invalid merely because they predate this governance feature.
+
+When a repository declares `ai_review_workflow`, conformance validation verifies that it points to a real `.github/workflows/*.yml` or `.yaml` file with current-HEAD and review-dismissal event coverage, immutable canonical action pins, request/wait separation, evaluated PR/event/HEAD-scoped cancellation, positive numeric timing overrides when supplied, no job-level timeout/concurrency overrides, exact least-privilege permissions, executable runners, a stable `codex-review` check name, no writable status/check API, and effective CODEOWNERS protection for the full workflow namespace plus `.github/CODEOWNERS` itself. Optional `review-context` values must be non-expression literals so request markers can never disclose evaluated GitHub tokens or secrets.
+
+CODEOWNERS matching follows root-anchor semantics: a leading `/` anchors the rule to the repository root, and the effective last matching non-comment rule determines ownership. Commented rules, ownerless final overrides, symlinked CODEOWNERS paths, and files at or above GitHub's 3 MB CODEOWNERS limit do not satisfy governance protection.
+
+## Bootstrap rule
+
+A repository cannot enforce a newly added governance workflow or CODEOWNERS rule on the same pull request that introduces them. The first adoption PR is therefore a one-time bootstrap: it must receive explicit current-HEAD Codex evidence and satisfy the repository's existing CI and governance before merge.
+
+Immediately after that merge:
+
+1. add `codex-review` to required status checks;
+2. enable **Require review from Code Owners**;
+3. enable **Dismiss stale pull request approvals when new commits are pushed** (or the equivalent latest-push approval rule);
+4. keep **Require conversation resolution before merging** enabled.
+
+Every later ordinary PR then follows the automated current-HEAD review gate. Governance-file changes remain intentionally exceptional.
+
+## Codex setup
+
+Codex must be configured for the repository in ChatGPT Codex Cloud. If the repository has no Codex environment, the required gate cannot become green; configure the environment before making `codex-review` required.
+
+## Auto-merge
+
+Auto-merge is compatible with this model and is recommended once the ruleset is active. GitHub may merge automatically only after normal CI, the current-HEAD `codex-review` job, review-thread resolution, and any required fresh code-owner approval are all green.
+
+## Quota-aware review lifecycle
+
+Codex review is asynchronous and quota-limited. Deterministic CI, linting,
+tests, conformance, and security checks run during normal iteration. New
+commits invalidate stale Codex evidence but do not automatically spend another
+review.
+
+For repositories opting into AI-review governance, branch protection MUST
+require the pull request branch to be up to date with its protected base before
+merge (GitHub strict required-status-check policy or an equivalent rule). This
+prevents a clean review for an older base revision from remaining mergeable
+after the base advances. The reference repository enforces this rule.
+
+When repository-level Codex automatic review is enabled, opening a non-draft
+pull request or marking a draft ready already starts Codex. The required wait
+job reuses only a server-verifiable, live, non-dismissed exact-current-HEAD
+Codex review object with trusted workflow-run provenance. PR-level reactions
+are not revision-addressed and are therefore not reusable native evidence. A
+reaction-only result must complete through the trusted marker-backed fallback
+request path, whose request comment and workflow run are bound to the exact
+HEAD/base checkpoint.
+
+The one-shot `codex:review` label remains an explicit fallback or retry path
+when no native review is available or an earlier request ended terminally. Both
+request and wait jobs require `actions: read` so server-verified workflow-run
+provenance also works in private repositories. Label-triggered requests remain
+deduplicated while pending, and a dismissed matching review may be deliberately
+replaced by applying the label again.
+
+If Codex reports code-review quota exhaustion or a terminal request failure,
+the gate fails closed and never retries automatically. Re-apply the label only
+after capacity returns or the failure is understood. The merge invariant is
+unchanged: exact current HEAD/base Codex evidence and zero unresolved
+Codex-authored review threads.

@@ -17,9 +17,73 @@ from ai_native import (
     validate_manifest,
 )
 
+AI_REVIEW_GATE_REF = "70a27f1691c870f1f5423698b2864edd96fee98c"
+AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate@" + AI_REVIEW_GATE_REF
+AI_REVIEW_WORKFLOW = """name: Codex review governance
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]
+  pull_request_target:
+    types: [labeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
+permissions:
+  contents: read
+concurrency:
+  group: codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  request:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'codex:review'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: AI_REVIEW_ACTION
+        with:
+          token: ${{ github.token }}
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          mode: request
+          request-label: codex:review
+  codex-review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: AI_REVIEW_ACTION
+        with:
+          token: ${{ github.token }}
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          mode: wait
+          request-label: codex:review
+""".replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
+
 
 def _template() -> dict:
     return load_mapping(template_path())
+
+
+def _enable_ai_review(
+    data: dict,
+    value: str | list[str] = ".github/workflows/codex-review.yml",
+) -> None:
+    data["evidence"]["paths"]["ai_review_workflow"] = value
 
 
 def _materialize_evidence(root: Path, data: dict) -> None:
@@ -36,6 +100,31 @@ def _materialize_evidence(root: Path, data: dict) -> None:
                 path.mkdir(parents=True, exist_ok=True)
                 (path / ".keep").write_text("evidence\n", encoding="utf-8")
 
+    ai_review = paths.get("ai_review_workflow")
+    ai_reviews = [ai_review] if isinstance(ai_review, str) else ai_review or []
+    for relative in ai_reviews:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(AI_REVIEW_WORKFLOW, encoding="utf-8")
+    if ai_reviews:
+        codeowners = root / ".github" / "CODEOWNERS"
+        codeowners.parent.mkdir(parents=True, exist_ok=True)
+        codeowners.write_text(
+            "/.github/workflows/** @repository-owner\n/.github/CODEOWNERS @repository-owner\n",
+            encoding="utf-8",
+        )
+
+
+def _validate_ai_review_text(tmp_path: Path, workflow_text: str) -> list:
+    data = _template()
+    _enable_ai_review(data)
+    _materialize_evidence(tmp_path, data)
+    workflow = tmp_path / data["evidence"]["paths"]["ai_review_workflow"]
+    workflow.write_text(workflow_text, encoding="utf-8")
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return validate_manifest(manifest, tmp_path)[1]
+
 
 def test_starter_template_contract_is_valid() -> None:
     data = _template()
@@ -43,6 +132,7 @@ def test_starter_template_contract_is_valid() -> None:
     assert data["version"] == 2
     assert data["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
     assert "mcp" not in data["interfaces"]
+    assert "ai_review_workflow" not in data["evidence"]["paths"]
     assert contract_findings(data) == []
 
 
@@ -75,8 +165,7 @@ def test_manifest_v2_requires_welcome_and_troubleshooting_skills() -> None:
     findings = contract_findings(data)
 
     assert any(
-        finding.code == "schema.invalid" and finding.path == "agent.skills"
-        for finding in findings
+        finding.code == "schema.invalid" and finding.path == "agent.skills" for finding in findings
     )
 
 
@@ -120,8 +209,7 @@ def test_missing_welcome_skill_evidence_fails(tmp_path: Path) -> None:
     _, findings = validate_manifest(manifest, tmp_path)
 
     assert any(
-        finding.code == "evidence.path_missing"
-        and finding.path == "evidence.paths.welcome_skill"
+        finding.code == "evidence.path_missing" and finding.path == "evidence.paths.welcome_skill"
         for finding in findings
     )
 
@@ -141,8 +229,7 @@ def test_upgrade_migrates_v1_to_v2_agent_skills() -> None:
     assert migrated["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
     assert migrated["evidence"]["paths"]["welcome_skill"] == "skills/welcome/SKILL.md"
     assert (
-        migrated["evidence"]["paths"]["troubleshooting_skill"]
-        == "skills/troubleshooting/SKILL.md"
+        migrated["evidence"]["paths"]["troubleshooting_skill"] == "skills/troubleshooting/SKILL.md"
     )
 
 
@@ -179,6 +266,231 @@ def test_security_scan_requires_generic_security_evidence() -> None:
 
     assert "security_evidence" in keys
     assert "security_workflow" not in keys
+
+
+def test_ai_review_workflow_is_opt_in_for_version_one_manifests(tmp_path: Path) -> None:
+    data = _template()
+    assert "ai_review_workflow" not in required_evidence_keys(data)
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert findings == []
+
+
+def test_missing_declared_ai_review_workflow_fails(tmp_path: Path) -> None:
+    data = _template()
+    _enable_ai_review(data)
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+    (tmp_path / data["evidence"]["paths"]["ai_review_workflow"]).unlink()
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.path_missing"
+        and finding.path == "evidence.paths.ai_review_workflow"
+        for finding in findings
+    )
+
+
+def test_ai_review_evidence_must_be_a_trusted_workflow(tmp_path: Path) -> None:
+    data = _template()
+    _enable_ai_review(data)
+    _materialize_evidence(tmp_path, data)
+    data["evidence"]["paths"]["ai_review_workflow"] = "README.md"
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "evidence.ai_review_workflow_invalid"
+        and finding.path == "evidence.paths.ai_review_workflow"
+        for finding in findings
+    )
+
+
+def test_ai_review_workflow_rejects_writable_status_api(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(
+            "permissions:\n  contents: read",
+            "permissions:\n  contents: read\n  statuses: write",
+            1,
+        ),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_write_all_permissions(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace("permissions:\n  contents: read", "permissions: write-all", 1),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_comment_spoofed_semantics(tmp_path: Path) -> None:
+    fake_workflow = """name: fake
+on:
+  workflow_dispatch:
+jobs:
+  unrelated:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo safe
+# pull_request:
+# pull_request_target:
+# pull_request_review:
+# codex-review:
+# mode: request
+# mode: wait
+# issues: write
+# issues: read
+# pull-requests: read
+# github.event_name == 'pull_request_target'
+# github.event_name == 'pull_request'
+# cancel-in-progress: true
+# uses: AI_REVIEW_ACTION
+""".replace("AI_REVIEW_ACTION", AI_REVIEW_ACTION)
+
+    findings = _validate_ai_review_text(tmp_path, fake_workflow)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_untrusted_gate_ref(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(AI_REVIEW_GATE_REF, "0" * 40),
+    )
+
+    assert any(
+        finding.code == "evidence.ai_review_workflow_invalid"
+        and "untrusted gate revision" in finding.message
+        for finding in findings
+    )
+
+
+def test_ai_review_workflow_rejects_multiple_paths(tmp_path: Path) -> None:
+    data = _template()
+    _enable_ai_review(
+        data,
+        [
+            ".github/workflows/codex-review.yml",
+            ".github/workflows/codex-review-secondary.yml",
+        ],
+    )
+    manifest = tmp_path / "AI_NATIVE_PLATFORM.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _materialize_evidence(tmp_path, data)
+
+    _, findings = validate_manifest(manifest, tmp_path)
+
+    assert any(
+        finding.code == "schema.invalid" and finding.path == "evidence.paths.ai_review_workflow"
+        for finding in findings
+    )
+
+
+def test_ai_review_workflow_requires_token_input(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace("          token: ${{ github.token }}\n", "", 1),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_pr_head_execution_in_request_job(tmp_path: Path) -> None:
+    unsafe = AI_REVIEW_WORKFLOW.replace(
+        "    steps:\n      - uses: " + AI_REVIEW_ACTION,
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "        with:\n"
+        "          ref: ${{ github.event.pull_request.head.sha }}\n"
+        "      - uses: " + AI_REVIEW_ACTION,
+        1,
+    )
+
+    findings = _validate_ai_review_text(tmp_path, unsafe)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_skipped_gate_step(tmp_path: Path) -> None:
+    unsafe = AI_REVIEW_WORKFLOW.replace(
+        "      - uses: " + AI_REVIEW_ACTION,
+        "      - uses: " + AI_REVIEW_ACTION + "\n        if: false",
+        1,
+    )
+
+    findings = _validate_ai_review_text(tmp_path, unsafe)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_ignored_gate_failure(tmp_path: Path) -> None:
+    unsafe = AI_REVIEW_WORKFLOW.replace(
+        "      - uses: " + AI_REVIEW_ACTION,
+        "      - uses: " + AI_REVIEW_ACTION + "\n        continue-on-error: true",
+        1,
+    )
+
+    findings = _validate_ai_review_text(tmp_path, unsafe)
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_rejects_false_job_condition(tmp_path: Path) -> None:
+    canonical = "if: github.event.pull_request.draft == false"
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(canonical, canonical + " && false"),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_requires_synchronize_event(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(
+            "    types: [opened, synchronize, reopened, ready_for_review, edited, labeled]\n",
+            "    types: [opened]\n",
+            1,
+        ),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_ai_review_workflow_separates_event_concurrency(tmp_path: Path) -> None:
+    findings = _validate_ai_review_text(
+        tmp_path,
+        AI_REVIEW_WORKFLOW.replace(
+            "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}",
+            "codex-review-${{ github.event.pull_request.number }}",
+        ),
+    )
+
+    assert any(finding.code == "evidence.ai_review_workflow_invalid" for finding in findings)
+
+
+def test_codex_review_gate_checks_unresolved_threads() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "actions/codex-review-gate/codex-review-gate.sh").read_text(encoding="utf-8")
+
+    assert "reviewThreads(first: 100" in script
+    assert "has_unresolved_codex_threads" in script
+    assert ".isResolved == false" in script
+    assert "all Codex review threads are resolved" in script
 
 
 def test_workflow_security_evidence_passes(tmp_path: Path) -> None:
@@ -280,3 +592,4 @@ def test_init_copies_canonical_template(tmp_path: Path) -> None:
     assert generated["version"] == 2
     assert generated["agent"]["skills"] == {"welcome": True, "troubleshooting": True}
     assert "mcp" not in generated["interfaces"]
+    assert "ai_review_workflow" not in generated["evidence"]["paths"]
