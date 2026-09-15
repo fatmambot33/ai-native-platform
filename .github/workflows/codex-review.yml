@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-${{ github.event.pull_request.base.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Request one merge-ready Codex review
-        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@1d919dd8cfff7c7f6c51cd110e5ed94396f50f00
+        uses: fatmambot33/ai-native-platform/actions/codex-review-gate@1b26da0ebed82de7589da135c5e641507d4dbc55
         with:
           token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}

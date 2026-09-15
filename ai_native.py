@@ -52,14 +52,14 @@ BASE_EVIDENCE = {"readme", "tests", "agent_instructions", "typing", "ci"}
 AI_REVIEW_ACTION = "fatmambot33/ai-native-platform/actions/codex-review-gate"
 TRUSTED_AI_REVIEW_GATE_REFS = frozenset(
     {
-        "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00",
+        "1b26da0ebed82de7589da135c5e641507d4dbc55",
     }
 )
 CODEOWNERS_SIZE_LIMIT_BYTES = 3 * 1024 * 1024
 PR_EVENT_FILTER_KEYS = frozenset({"branches", "branches-ignore", "paths", "paths-ignore"})
 MAX_AI_REVIEW_TIMING_SECONDS = 2_147_483_647
 FORBIDDEN_GITHUB_CLI_ENV_KEYS = frozenset(
-    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "BASH_ENV"}
+    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "BASH_ENV", "SHELLOPTS"}
 )
 
 
@@ -941,7 +941,7 @@ def _single_ai_review_workflow_findings(value: str, root: Path) -> list[Finding]
     concurrency = workflow.get("concurrency", {})
     expected_group = (
         "codex-review-${{ github.event_name }}-${{ github.event.pull_request.number }}"
-        "-${{ github.event.pull_request.head.sha }}"
+        "-${{ github.event.pull_request.head.sha }}-${{ github.event.pull_request.base.sha }}"
     )
     if not isinstance(concurrency, Mapping) or concurrency.get("cancel-in-progress") is not False:
         failures.append("concurrency must preserve active review polling")

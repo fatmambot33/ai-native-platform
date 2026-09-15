@@ -22,7 +22,7 @@ The `pull_request_target` job is loaded from the protected base branch. It never
 
 The `pull_request` job is the normal required `codex-review` check. A `pull_request_review` dismissal event runs the same read-only gate again so explicitly dismissed Codex evidence cannot leave a previously green result trusted. Both paths evaluate exactly `github.event.pull_request.head.sha` while ordinary CI runs in parallel.
 
-Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR/HEAD-scoped concurrency still separates event classes, pull requests, and revisions, while cancellation is disabled. A merge-ready polling run therefore remains active when another event for the same revision arrives, without blocking a newer HEAD behind an obsolete wait.
+Both jobs invoke `actions/codex-review-gate` from an immutable 40-character framework commit. PR/HEAD/base-scoped concurrency still separates event classes, pull requests, and revisions, while cancellation is disabled. A merge-ready polling run therefore remains active when another event for the same revision arrives, without blocking a newer HEAD or base behind an obsolete wait.
 
 The required result is therefore not a raw commit status created through `statuses: write` or `checks: write`; those write scopes are intentionally absent from the governance workflow.
 

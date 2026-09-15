@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_native import TRUSTED_AI_REVIEW_GATE_REFS
 
-SUPERSEDED_GATE_REF = "0c4f68f62abb426ba80d0d1bb36356c3468f5534"
+SUPERSEDED_GATE_REF = "1d919dd8cfff7c7f6c51cd110e5ed94396f50f00"
 
 
 def test_canonical_workflow_uses_only_current_trusted_gate() -> None:
