@@ -37,3 +37,5 @@ addition = '''\n\ndef test_remaining_governance_findings_are_locked() -> None:\n
 if "test_remaining_governance_findings_are_locked" not in text:
     text += addition
 path.write_text(text, encoding="utf-8")
+
+# Touch after the publisher workflow exists so the path-filtered run starts.
