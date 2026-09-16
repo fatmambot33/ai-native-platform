@@ -172,6 +172,18 @@ def test_closed_done_phase_can_unlock_next_phase() -> None:
     plan = build_plan(issues, config())
 
     assert plan["items"][0]["next_phase"] == 12
+    assert plan["items"][0]["phase_progress"] == "1/2"
+
+
+def test_plan_checkbox_does_not_override_semantic_phase_state() -> None:
+    """Dashboard progress comes from Phase state, not stale Plan checkboxes."""
+    stale = plan_issue(state="running")
+    stale["body"] = stale["body"].replace("- [ ] #11 first", "- [x] #11 first")
+    issues = [stale, phase_issue(11, state="verifying"), phase_issue(12, blocked_by="#11")]
+
+    plan = build_plan(issues, config())
+
+    assert plan["items"] == []
 
 
 def test_invalid_plan_metadata_fails_closed() -> None:
