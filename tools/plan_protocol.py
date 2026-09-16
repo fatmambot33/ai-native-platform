@@ -202,10 +202,11 @@ def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> i
             raise PlanProtocolError(f"missing phase issue #{number}")
         phases.append(parse_phase(issue, plan_number))
 
+    linked_pr_open = {phase.number: _open_linked_pr(phase, by_number) for phase in phases}
     active = [
         phase
         for phase in phases
-        if phase.state in _ACTIVE_PHASE_STATES or _open_linked_pr(phase, by_number)
+        if phase.state in _ACTIVE_PHASE_STATES or linked_pr_open[phase.number]
     ]
     if len(active) > 1:
         raise PlanProtocolError("multiple active phases")
