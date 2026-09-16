@@ -11,6 +11,21 @@ _PHASE_RE = re.compile(r"^- \[[ xX]\] #(\d+)\b", re.M)
 _REF_RE = re.compile(r"#(\d+)")
 _PLAN_STATES = {"draft", "ready", "running", "blocked", "verifying", "done"}
 _PHASE_STATES = {"ready", "running", "blocked", "verifying", "done"}
+_REQUIRED_PLAN_SECTIONS = (
+    "Plan",
+    "Objective",
+    "Preconditions",
+    "Invariants",
+    "Phases",
+    "Acceptance criteria",
+    "Execution policy",
+)
+_REQUIRED_PHASE_SECTIONS = (
+    "Objective",
+    "Scope",
+    "Definition of done",
+    "Deterministic validation",
+)
 
 
 class PlanProtocolError(ValueError):
@@ -38,6 +53,35 @@ def _fields(body: str) -> dict[str, str]:
     return result
 
 
+def _section(body: str, heading: str) -> str | None:
+    """Return one exact level-two Markdown section, or ``None`` if absent."""
+    match = re.search(
+        rf"^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+        body,
+        re.M | re.S,
+    )
+    return match.group("body") if match else None
+
+
+def _require_sections(body: str, headings: tuple[str, ...], kind: str) -> None:
+    """Reject an executable contract missing any mandatory section."""
+    missing = [heading for heading in headings if _section(body, heading) is None]
+    if missing:
+        raise PlanProtocolError(f"{kind} is missing section: {missing[0]}")
+
+
+def phase_numbers(plan: dict[str, Any]) -> list[int]:
+    """Return ordered Phase references from the Plan's Phases section only."""
+    body = str(plan.get("body") or "")
+    phases = _section(body, "Phases")
+    if phases is None:
+        raise PlanProtocolError("Plan is missing section: Phases")
+    order = [int(value) for value in _PHASE_RE.findall(phases)]
+    if not order or len(order) != len(set(order)):
+        raise PlanProtocolError("Plan must declare unique ordered phases")
+    return order
+
+
 def _issue_map(issues: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     """Index issues by number and reject duplicate identities."""
     result: dict[int, dict[str, Any]] = {}
@@ -52,13 +96,20 @@ def _issue_map(issues: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
 def parse_phase(issue: dict[str, Any], parent: int) -> PhaseState:
     """Parse one Phase issue and validate its parent and execution metadata."""
     number = int(issue["number"])
-    fields = _fields(str(issue.get("body") or ""))
+    body = str(issue.get("body") or "")
+    _require_sections(body, _REQUIRED_PHASE_SECTIONS, f"phase #{number}")
+    fields = _fields(body)
     parent_refs = _REF_RE.findall(fields.get("parent_plan", ""))
     if parent_refs != [str(parent)]:
         raise PlanProtocolError(f"phase #{number} must declare Parent plan: #{parent}")
     state = fields.get("state", "")
     if state not in _PHASE_STATES:
         raise PlanProtocolError(f"phase #{number} has invalid State")
+    issue_state = str(issue.get("state") or "open")
+    if issue_state == "closed" and state != "done":
+        raise PlanProtocolError(f"closed phase #{number} must have State: done")
+    if issue_state not in {"open", "closed"}:
+        raise PlanProtocolError(f"phase #{number} has invalid GitHub state")
 
     blocked_by = fields.get("blocked_by", "")
     blockers = (
@@ -80,12 +131,27 @@ def parse_phase(issue: dict[str, Any], parent: int) -> PhaseState:
     return PhaseState(number, state, blockers, linked_pr)
 
 
+def _open_linked_pr(phase: PhaseState, by_number: dict[int, dict[str, Any]]) -> bool:
+    """Return whether a Phase's linked PR exists and is still open."""
+    if phase.linked_pr is None:
+        return False
+    linked = by_number.get(phase.linked_pr)
+    if linked is None or not linked.get("pull_request"):
+        raise PlanProtocolError(
+            f"phase #{phase.number} references missing PR #{phase.linked_pr}"
+        )
+    state = str(linked.get("state") or "")
+    if state not in {"open", "closed"}:
+        raise PlanProtocolError(f"PR #{phase.linked_pr} has invalid GitHub state")
+    return state == "open"
+
+
 def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> int | None:
     """Return the next runnable Phase number, failing closed on bad metadata.
 
-    A linked Phase already in progress wins over selecting new work. Otherwise
-    the first ready Phase in Plan order whose dependencies are completed is
-    selected. Closed dependencies count only when their Phase state is ``done``.
+    Open linked PRs always win over selecting new work. Otherwise the first
+    ready Phase in Plan order whose dependencies are completed is selected.
+    Closed dependencies count only when their Phase state is ``done``.
     """
     plan_number = int(plan["number"])
     body = str(plan.get("body") or "")
@@ -95,17 +161,18 @@ def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> i
     state = fields.get("state", "")
     if state not in _PLAN_STATES:
         raise PlanProtocolError("Plan has invalid State")
+    if state == "draft":
+        return None
+    _require_sections(body, _REQUIRED_PLAN_SECTIONS, "Plan")
     if state not in {"ready", "running"}:
         return None
-    if re.search(r"^## Preconditions\s*$", body, re.M) is None:
-        raise PlanProtocolError("Plan is missing Preconditions")
-    preconditions = body.split("## Preconditions", 1)[1].split("\n## ", 1)[0]
+
+    preconditions = _section(body, "Preconditions")
+    assert preconditions is not None
     if re.search(r"^- \[ \] ", preconditions, re.M):
         return None
 
-    order = [int(value) for value in _PHASE_RE.findall(body)]
-    if not order or len(order) != len(set(order)):
-        raise PlanProtocolError("Plan must declare unique ordered phases")
+    order = phase_numbers(plan)
     by_number = _issue_map(issues)
     phases: list[PhaseState] = []
     for number in order:
@@ -114,11 +181,7 @@ def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> i
             raise PlanProtocolError(f"missing phase issue #{number}")
         phases.append(parse_phase(issue, plan_number))
 
-    active = [
-        phase
-        for phase in phases
-        if phase.linked_pr is not None and phase.state in {"running", "verifying"}
-    ]
+    active = [phase for phase in phases if _open_linked_pr(phase, by_number)]
     if len(active) > 1:
         raise PlanProtocolError("multiple active linked phases")
     if active:
