@@ -5,11 +5,14 @@ on:
     - cron: '47 6 * * 1'
   issues:
     types: [opened, edited, reopened, closed, labeled, unlabeled]
+  pull_request:
+    types: [opened, closed, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
+  pull-requests: read
 
 concurrency:
   group: product-roadmap-${{ github.repository }}
