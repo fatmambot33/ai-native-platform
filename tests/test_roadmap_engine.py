@@ -122,7 +122,7 @@ def test_build_plan_ignores_prs_non_candidates_dashboard_and_closed() -> None:
     assert [item["number"] for item in plan["items"]] == [1]
     assert "## Now" in plan["body"]
     assert "#1" in plan["body"]
-    assert "changing labels refreshes the roadmap" in plan["body"]
+    assert "linked pull-request state changes refresh the roadmap" in plan["body"]
 
 
 def test_severity_label_overrides_body_severity() -> None:
