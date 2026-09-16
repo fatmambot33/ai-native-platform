@@ -39,7 +39,7 @@ jobs:
             fs.writeFileSync('roadmap-issues.json', JSON.stringify(issues));
       - name: Build deterministic roadmap
         run: |
-          python tools/roadmap_engine.py \
+          python -m tools.roadmap_engine \
             --input roadmap-issues.json \
             --config .ai-native/roadmap.yaml \
             --output roadmap-plan.json
