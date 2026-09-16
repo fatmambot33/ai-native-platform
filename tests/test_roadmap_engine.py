@@ -1,5 +1,8 @@
 """Tests for deterministic product-roadmap planning."""
 
+import pytest
+
+from tools.plan_protocol import PlanProtocolError
 from tools.roadmap_engine import build_plan
 
 
@@ -36,9 +39,44 @@ def issue(number: int, severity: str, labels: list[str] | None = None, **extra) 
         "created_at": f"2026-08-{number:02d}T00:00:00Z",
         "labels": [{"name": value} for value in (labels or ["enhancement"])],
         "body": f"**Severity:** `{severity}`",
+        "state": "open",
     }
     payload.update(extra)
     return payload
+
+
+def plan_issue(state: str = "ready", precondition: str = "x") -> dict:
+    """Build a versioned Plan with two ordered phases."""
+    return issue(
+        10,
+        "high",
+        body=(
+            f"Protocol: 1\nState: {state}\n\n"
+            f"## Preconditions\n- [{precondition}] governance complete\n\n"
+            "## Phases\n- [ ] #11 first\n- [ ] #12 second\n"
+        ),
+    )
+
+
+def phase_issue(
+    number: int,
+    *,
+    state: str = "ready",
+    blocked_by: str = "none",
+    linked_pr: str = "none",
+    issue_state: str = "open",
+) -> dict:
+    """Build one Phase issue for Plan #10."""
+    return issue(
+        number,
+        "unknown",
+        labels=["phase"],
+        state=issue_state,
+        body=(
+            f"State: {state}\nParent plan: #10\n"
+            f"Blocked by: {blocked_by}\nLinked PR: {linked_pr}\n"
+        ),
+    )
 
 
 def test_build_plan_applies_capacity_and_human_priority() -> None:
@@ -60,17 +98,14 @@ def test_build_plan_applies_capacity_and_human_priority() -> None:
     ]
 
 
-def test_build_plan_ignores_prs_non_candidates_and_dashboard() -> None:
+def test_build_plan_ignores_prs_non_candidates_dashboard_and_closed() -> None:
     """Only open roadmap-candidate issues are included."""
     issues = [
         issue(1, "high"),
         issue(2, "high", ["bug"]),
         issue(3, "high", pull_request={"url": "https://example.test/pulls/3"}),
-        issue(
-            4,
-            "high",
-            body="<!-- ai-native-roadmap-dashboard -->\nGenerated dashboard",
-        ),
+        issue(4, "high", body="<!-- ai-native-roadmap-dashboard -->\nGenerated dashboard"),
+        issue(5, "critical", state="closed"),
     ]
 
     plan = build_plan(issues, config())
@@ -92,3 +127,61 @@ def test_severity_label_overrides_body_severity() -> None:
 
     assert plan["items"][0]["number"] == 1
     assert plan["items"][0]["severity"] == "critical"
+
+
+def test_runnable_plan_consumes_capacity_and_exposes_phase_state() -> None:
+    """A runnable Plan is scheduled with reconstructable execution metadata."""
+    issues = [plan_issue(), phase_issue(11), phase_issue(12, blocked_by="#11")]
+
+    plan = build_plan(issues, config())
+
+    item = plan["items"][0]
+    assert item["number"] == 10
+    assert item["plan_state"] == "ready"
+    assert item["phase_progress"] == "0/2"
+    assert item["next_phase"] == 11
+    assert "Plan `ready`, phases 0/2, next #11" in plan["body"]
+
+
+def test_non_runnable_plan_does_not_consume_capacity() -> None:
+    """A blocked Plan leaves Now capacity available to ordinary work."""
+    issues = [
+        plan_issue(state="blocked"),
+        phase_issue(11, state="blocked"),
+        phase_issue(12, state="blocked", blocked_by="#11"),
+        issue(1, "medium"),
+        issue(2, "low"),
+    ]
+
+    plan = build_plan(issues, config())
+
+    assert [(item["number"], item["bucket"]) for item in plan["items"]] == [
+        (1, "now"),
+        (2, "now"),
+    ]
+
+
+def test_closed_done_phase_can_unlock_next_phase() -> None:
+    """Complete closed Phase state remains available to roadmap reconstruction."""
+    issues = [
+        plan_issue(state="running"),
+        phase_issue(11, state="done", issue_state="closed"),
+        phase_issue(12, blocked_by="#11"),
+    ]
+
+    plan = build_plan(issues, config())
+
+    assert plan["items"][0]["next_phase"] == 12
+
+
+def test_invalid_plan_metadata_fails_closed() -> None:
+    """Malformed versioned Plans are rejected rather than scheduled as ordinary work."""
+    issues = [plan_issue(state="ready", precondition=" "), phase_issue(11), phase_issue(12)]
+
+    plan = build_plan(issues, config())
+    assert plan["items"] == []
+
+    malformed = plan_issue()
+    malformed["body"] = malformed["body"].replace("State: ready", "State: nonsense")
+    with pytest.raises(PlanProtocolError, match="invalid State"):
+        build_plan([malformed, phase_issue(11), phase_issue(12)], config())
