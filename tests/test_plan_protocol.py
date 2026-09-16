@@ -134,14 +134,14 @@ def test_missing_linked_pr_fails_closed() -> None:
 
 
 def test_multiple_active_phases_fail_closed() -> None:
-    """Conflicting open PRs cannot silently select new work."""
+    """Conflicting semantic or PR activity cannot silently select new work."""
     issues = [
         phase(41, "running", linked_pr="#46"),
         phase(42, "verifying", "#41", "#47"),
         pull_request(46),
         pull_request(47),
     ]
-    with pytest.raises(PlanProtocolError, match="multiple active linked phases"):
+    with pytest.raises(PlanProtocolError, match="multiple active phases"):
         next_runnable_phase(plan(state="running"), issues)
 
 
