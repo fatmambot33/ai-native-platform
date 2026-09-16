@@ -61,7 +61,11 @@ def parse_phase(issue: dict[str, Any], parent: int) -> PhaseState:
         raise PlanProtocolError(f"phase #{number} has invalid State")
 
     blocked_by = fields.get("blocked_by", "")
-    blockers = () if blocked_by.lower() == "none" else tuple(int(value) for value in _REF_RE.findall(blocked_by))
+    blockers = (
+        ()
+        if blocked_by.lower() == "none"
+        else tuple(int(value) for value in _REF_RE.findall(blocked_by))
+    )
     if not blocked_by or (blocked_by.lower() != "none" and not blockers):
         raise PlanProtocolError(f"phase #{number} has invalid Blocked by")
 
@@ -110,7 +114,11 @@ def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> i
             raise PlanProtocolError(f"missing phase issue #{number}")
         phases.append(parse_phase(issue, plan_number))
 
-    active = [phase for phase in phases if phase.linked_pr is not None and phase.state in {"running", "verifying"}]
+    active = [
+        phase
+        for phase in phases
+        if phase.linked_pr is not None and phase.state in {"running", "verifying"}
+    ]
     if len(active) > 1:
         raise PlanProtocolError("multiple active linked phases")
     if active:
