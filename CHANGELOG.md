@@ -4,6 +4,22 @@ All notable changes are documented here.
 
 ## Unreleased
 
+### Added
+
+- Add opt-in `evidence.paths.ai_review_workflow` governance evidence with structural validation of trusted current-HEAD Codex review workflows.
+- Add a reusable Codex review gate that binds automated clean-reaction requests to the exact PR HEAD through server-verified GitHub Actions request-run provenance scoped to both head and base revisions.
+
+### Security
+
+- Require request jobs to use least-privilege permissions, keep wait jobs read-only, preserve the `codex-review` check name, and reject job-level concurrency/timeouts that can bypass or destabilize the gate.
+- Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities below GitHub's size limit, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation plus registry-controlled executable validation pins.
+- Keep bootstrap evidence fail-closed: collaborator-authored bootstrap markers are not trusted; bootstrap succeeds only through an exact-HEAD native Codex review bound to the active base or trusted bot request evidence bound to the exact HEAD and base revisions.
+
+### Migration
+
+- Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, finish deterministic CI before spending the one-shot Codex review request, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
+
+
 ## [0.3.0] - 2026-09-11
 
 ### Added

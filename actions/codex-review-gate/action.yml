@@ -1,5 +1,5 @@
 name: Codex current-HEAD review gate
-description: Request or require Codex review evidence for a pull-request HEAD.
+description: Request or require current-HEAD Codex review evidence while conserving review quota.
 
 inputs:
   token:
@@ -11,16 +11,23 @@ inputs:
   head-sha:
     description: Current pull request HEAD SHA.
     required: true
+  base-sha:
+    description: Current pull request base SHA for exact revision binding.
+    required: true
   review-context:
-    description: Optional context key, such as the base SHA, that requires fresh review evidence for the same HEAD.
+    description: Optional context key; evidence is always bound to base-sha as well.
     required: false
     default: ""
   mode:
     description: One of request, wait, or request-and-wait.
     required: false
     default: wait
+  request-label:
+    description: One-shot label authorizing a quota-consuming Codex review request.
+    required: false
+    default: "codex:review"
   check-name:
-    description: Optional commit-status context to publish directly on the pull-request HEAD. Intended for trusted pull_request_target workflows with statuses:write.
+    description: Optional commit-status context to publish directly on the pull-request HEAD. Intended for trusted workflows with statuses:write.
     required: false
     default: ""
   timeout-seconds:
@@ -28,7 +35,7 @@ inputs:
     required: false
     default: "1800"
   poll-seconds:
-    description: Poll interval while waiting for Codex.
+    description: Poll interval while waiting for Codex; clamped to timeout-seconds at runtime.
     required: false
     default: "60"
 
@@ -42,9 +49,11 @@ runs:
         REPO: ${{ github.repository }}
         PR_NUMBER: ${{ inputs.pr-number }}
         HEAD_SHA: ${{ inputs.head-sha }}
+        BASE_SHA: ${{ inputs.base-sha }}
         CODEX_REVIEW_CONTEXT: ${{ inputs.review-context }}
         CODEX_REVIEW_MODE: ${{ inputs.mode }}
+        CODEX_REVIEW_REQUEST_LABEL: ${{ inputs.request-label }}
         CODEX_REVIEW_CHECK_NAME: ${{ inputs.check-name }}
         CODEX_REVIEW_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
         CODEX_REVIEW_POLL_SECONDS: ${{ inputs.poll-seconds }}
-      run: bash "$GITHUB_ACTION_PATH/codex-review-gate.sh"
+      run: bash "$GITHUB_ACTION_PATH/preflight.sh"

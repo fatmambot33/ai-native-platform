@@ -10,7 +10,7 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from ai_native import load_schema
-from validator.validate_standard import ROOT, validate_standard
+from validator.validate_standard import REQUIRED_FILES, ROOT, validate_standard
 
 IMMUTABLE_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -57,6 +57,18 @@ def test_codeql_uploads_when_public_and_retains_private_fallback() -> None:
     assert "actions/upload-artifact@v4" in workflow
 
 
+def test_reusable_codex_gate_implementation_is_required() -> None:
+    assert "actions/codex-review-gate/action.yml" in REQUIRED_FILES
+    assert "actions/codex-review-gate/codex-review-gate.sh" in REQUIRED_FILES
+
+
+def test_standard_self_validation_uses_effective_codeowners_rules() -> None:
+    source = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+
+    assert "_codeowners_effective_owners" in source
+    assert "token not in codeowners" not in source
+
+
 def test_real_consumer_registry_is_immutable_and_diverse() -> None:
     registry = yaml.safe_load(
         (ROOT / "consumers/registry.yaml").read_text(encoding="utf-8")
@@ -72,6 +84,22 @@ def test_real_consumer_registry_is_immutable_and_diverse() -> None:
     for consumer in consumers:
         assert IMMUTABLE_SHA.fullmatch(consumer["ref"])
         assert consumer["manifest"] == "AI_NATIVE_PLATFORM.yaml"
+
+
+def test_consumer_registry_is_codeowner_protected() -> None:
+    codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    source = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+
+    assert "/consumers/registry.yaml @fatmambot33" in codeowners
+    assert '"consumers/registry.yaml",' in source
+
+
+def test_standard_requests_review_only_after_ci_is_green() -> None:
+    standard = yaml.safe_load(
+        (ROOT / "standard/AI_NATIVE_PLATFORM.yaml").read_text(encoding="utf-8")
+    )
+
+    assert standard["governance"]["ai_review"]["request_while_ci_runs"] is False
 
 
 def test_consumer_workflow_validates_registry_entries() -> None:
@@ -105,3 +133,19 @@ def test_release_workflow_is_idempotent_verifiable_and_prerelease() -> None:
         "--verify-tag",
     ):
         assert token in workflow
+
+
+
+def test_branch_freshness_is_scoped_to_ai_review() -> None:
+    standard = yaml.safe_load(
+        (ROOT / "standard/AI_NATIVE_PLATFORM.yaml").read_text(encoding="utf-8")
+    )
+    assert "branch_up_to_date" not in standard["release_gates"]
+    assert "branch_up_to_date" in standard["governance"]["ai_review"]["release_gates"]
+
+
+def test_root_agent_policy_is_codeowner_protected() -> None:
+    codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    validator = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
+    assert "/AGENTS.md @fatmambot33" in codeowners
+    assert '"AGENTS.md",' in validator
