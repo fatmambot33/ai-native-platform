@@ -45,6 +45,21 @@ class RoadmapItem:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class InactivePlan:
+    """One Plan visible on the roadmap without consuming capacity."""
+
+    number: int
+    title: str
+    url: str
+    state: str
+    phase_progress: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
 def _label_names(issue: dict[str, Any]) -> set[str]:
     """Normalize GitHub issue labels to a set of names."""
     names: set[str] = set()
@@ -75,9 +90,20 @@ def _manual_priority(issue: dict[str, Any], config: dict[str, Any]) -> int:
     return min(matches) if matches else len(priorities)
 
 
+def _plan_section(body: str) -> str | None:
+    """Return the documented Plan metadata section when present exactly once."""
+    matches = list(
+        re.finditer(r"^## Plan\s*$\n(?P<body>.*?)(?=^## |\Z)", body, re.M | re.S)
+    )
+    if len(matches) > 1:
+        raise PlanProtocolError("duplicate section: Plan")
+    return matches[0].group("body") if matches else None
+
+
 def _is_plan(issue: dict[str, Any]) -> bool:
-    """Return whether an issue declares any Plan protocol version."""
-    return PLAN_PROTOCOL_PATTERN.search(str(issue.get("body") or "")) is not None
+    """Return whether an issue declares a protocol inside a Plan section."""
+    section = _plan_section(str(issue.get("body") or ""))
+    return section is not None and PLAN_PROTOCOL_PATTERN.search(section) is not None
 
 
 def _is_candidate(issue: dict[str, Any], config: dict[str, Any]) -> bool:
@@ -109,10 +135,13 @@ def _plan_metadata(
 ) -> tuple[str, str, int | None]:
     """Return validated state, semantic progress, and next Phase for a Plan."""
     body = str(issue.get("body") or "")
-    protocol_match = PLAN_PROTOCOL_PATTERN.search(body)
+    plan_section = _plan_section(body)
+    if plan_section is None:
+        raise PlanProtocolError(f"plan #{issue['number']} is missing Plan section")
+    protocol_match = PLAN_PROTOCOL_PATTERN.search(plan_section)
     if protocol_match is None or protocol_match.group(1) != "1":
         raise PlanProtocolError(f"plan #{issue['number']} has unsupported Protocol")
-    state_match = PLAN_STATE_PATTERN.search(body)
+    state_match = PLAN_STATE_PATTERN.search(plan_section)
     if state_match is None:
         raise PlanProtocolError(f"plan #{issue['number']} has invalid State")
     state = state_match.group(1)
@@ -133,18 +162,29 @@ def _plan_metadata(
 def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
     """Build a deterministic roadmap plan from GitHub issues.
 
-    Versioned Plans consume capacity only when their protocol state reconstructs
-    successfully and exposes a runnable or already-active Phase.
+    Runnable Plans compete for execution capacity. Valid non-runnable Plans
+    remain visible in a separate view without receiving a capacity label.
     """
     candidates: list[tuple[dict[str, Any], tuple[str, str, int | None] | None]] = []
+    inactive_plans: list[InactivePlan] = []
     for issue in issues:
         if not _is_candidate(issue, config):
             continue
         metadata = _plan_metadata(issue, issues) if _is_plan(issue) else None
         if metadata is not None and metadata[2] is None:
+            inactive_plans.append(
+                InactivePlan(
+                    number=int(issue["number"]),
+                    title=str(issue.get("title") or f"Issue #{issue['number']}"),
+                    url=str(issue.get("html_url") or ""),
+                    state=metadata[0],
+                    phase_progress=metadata[1],
+                )
+            )
             continue
         candidates.append((issue, metadata))
     candidates.sort(key=lambda pair: _issue_sort_key(pair[0], config))
+    inactive_plans.sort(key=lambda item: item.number)
 
     capacity = config.get("capacity", {})
     now_limit = max(0, int(capacity.get("now", 3)))
@@ -180,11 +220,14 @@ def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str
         "priority_labels": config.get("priority_labels", {}),
         "dashboard": config.get("dashboard", {}),
         "items": [item.as_dict() for item in items],
-        "body": render_dashboard(items, config),
+        "inactive_plans": [item.as_dict() for item in inactive_plans],
+        "body": render_dashboard(items, inactive_plans, config),
     }
 
 
-def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
+def render_dashboard(
+    items: list[RoadmapItem], inactive_plans: list[InactivePlan], config: dict[str, Any]
+) -> str:
     """Render the managed roadmap dashboard issue body."""
     dashboard = config.get("dashboard", {})
     marker = str(dashboard.get("marker", "<!-- ai-native-roadmap-dashboard -->"))
@@ -216,6 +259,14 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
                     f"next #{item.next_phase}"
                 )
             lines.append(f"- #{item.number} {link}{detail}")
+    lines.extend(["", "## Plans outside capacity", ""])
+    if not inactive_plans:
+        lines.append("- No non-runnable Plans.")
+    for item in inactive_plans:
+        link = f"[{item.title}]({item.url})" if item.url else item.title
+        lines.append(
+            f"- #{item.number} {link} — Plan `{item.state}`, phases {item.phase_progress}"
+        )
     lines.extend(
         [
             "",
@@ -224,8 +275,9 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
             "- Only open issues with a configured candidate label are managed.",
             "- Pull requests and this dashboard issue are excluded.",
             "- Plans consume execution capacity only while they expose a runnable Phase.",
+            "- Non-runnable Plans remain visible outside capacity buckets.",
             "- Invalid Plan metadata fails closed instead of being scheduled.",
-            "- Opening, closing, reopening, editing, or changing labels refreshes the roadmap.",
+            "- Issue and linked pull-request state changes refresh the roadmap.",
             "- Automation only changes roadmap labels and this dashboard issue.",
         ]
     )
