@@ -16,7 +16,9 @@ from tools.plan_protocol import PlanProtocolError, next_runnable_phase
 SEVERITY_PATTERN = re.compile(r"\*\*Severity:\*\*\s*`?(critical|high|medium|low)`?", re.I)
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "unknown": 4}
 PLAN_PROTOCOL_PATTERN = re.compile(r"^Protocol:\s*1\s*$", re.M)
-PLAN_STATE_PATTERN = re.compile(r"^State:\s*(draft|ready|running|blocked|verifying|done)\s*$", re.M)
+PLAN_STATE_PATTERN = re.compile(
+    r"^State:\s*(draft|ready|running|blocked|verifying|done)\s*$", re.M
+)
 PHASE_PATTERN = re.compile(r"^- \[([ xX])\] #(\d+)\b", re.M)
 
 
@@ -98,7 +100,9 @@ def _issue_sort_key(issue: dict[str, Any], config: dict[str, Any]) -> tuple[Any,
     )
 
 
-def _plan_metadata(issue: dict[str, Any], issues: list[dict[str, Any]]) -> tuple[str, str, int | None]:
+def _plan_metadata(
+    issue: dict[str, Any], issues: list[dict[str, Any]]
+) -> tuple[str, str, int | None]:
     """Return validated state, phase progress, and next runnable Phase for a Plan."""
     body = str(issue.get("body") or "")
     state_match = PLAN_STATE_PATTERN.search(body)
@@ -135,19 +139,54 @@ def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str
 
     items: list[RoadmapItem] = []
     for index, (issue, metadata) in enumerate(candidates):
-        bucket = "now" if index < now_limit else "next" if index < now_limit + next_limit else "later"
+        if index < now_limit:
+            bucket = "now"
+        elif index < now_limit + next_limit:
+            bucket = "next"
+        else:
+            bucket = "later"
         plan_state, phase_progress, next_phase = metadata or (None, None, None)
-        items.append(RoadmapItem(number=int(issue["number"]), title=str(issue.get("title") or f"Issue #{issue['number']}"), url=str(issue.get("html_url") or ""), severity=_severity(issue), bucket=bucket, label=str(labels[bucket]), plan_state=plan_state, phase_progress=phase_progress, next_phase=next_phase))
+        items.append(
+            RoadmapItem(
+                number=int(issue["number"]),
+                title=str(issue.get("title") or f"Issue #{issue['number']}"),
+                url=str(issue.get("html_url") or ""),
+                severity=_severity(issue),
+                bucket=bucket,
+                label=str(labels[bucket]),
+                plan_state=plan_state,
+                phase_progress=phase_progress,
+                next_phase=next_phase,
+            )
+        )
 
-    return {"version": int(config.get("version", 1)), "managed_labels": labels, "priority_labels": config.get("priority_labels", {}), "dashboard": config.get("dashboard", {}), "items": [item.as_dict() for item in items], "body": render_dashboard(items, config)}
+    return {
+        "version": int(config.get("version", 1)),
+        "managed_labels": labels,
+        "priority_labels": config.get("priority_labels", {}),
+        "dashboard": config.get("dashboard", {}),
+        "items": [item.as_dict() for item in items],
+        "body": render_dashboard(items, config),
+    }
 
 
 def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
     """Render the managed roadmap dashboard issue body."""
     dashboard = config.get("dashboard", {})
     marker = str(dashboard.get("marker", "<!-- ai-native-roadmap-dashboard -->"))
-    priorities = ", ".join(f"`{label}`" for label in config.get("priority_labels", {}))
-    lines = [marker, "# Product roadmap", "", "This issue is maintained automatically from open roadmap candidates.", "The human strategy remains in `ROADMAP.md`; this is the live execution view.", "", f"Human priority overrides: {priorities or 'none configured'}.", "Within the same priority, higher severity and older issues run first."]
+    priorities = ", ".join(
+        f"`{label}`" for label in config.get("priority_labels", {})
+    )
+    lines = [
+        marker,
+        "# Product roadmap",
+        "",
+        "This issue is maintained automatically from open roadmap candidates.",
+        "The human strategy remains in `ROADMAP.md`; this is the live execution view.",
+        "",
+        f"Human priority overrides: {priorities or 'none configured'}.",
+        "Within the same priority, higher severity and older issues run first.",
+    ]
     for bucket, heading in (("now", "Now"), ("next", "Next"), ("later", "Later")):
         lines.extend(["", f"## {heading}", ""])
         selected = [item for item in items if item.bucket == bucket]
@@ -158,9 +197,24 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
             link = f"[{item.title}]({item.url})" if item.url else item.title
             detail = f" — `{item.severity}`"
             if item.plan_state is not None:
-                detail += f" — Plan `{item.plan_state}`, phases {item.phase_progress}, next #{item.next_phase}"
+                detail += (
+                    f" — Plan `{item.plan_state}`, phases {item.phase_progress}, "
+                    f"next #{item.next_phase}"
+                )
             lines.append(f"- #{item.number} {link}{detail}")
-    lines.extend(["", "## Policy", "", "- Only open issues with a configured candidate label are managed.", "- Pull requests and this dashboard issue are excluded.", "- Plans consume execution capacity only while they expose a runnable Phase.", "- Invalid Plan metadata fails closed instead of being scheduled.", "- Opening, closing, reopening, editing, or changing labels refreshes the roadmap.", "- Automation only changes roadmap labels and this dashboard issue."])
+    lines.extend(
+        [
+            "",
+            "## Policy",
+            "",
+            "- Only open issues with a configured candidate label are managed.",
+            "- Pull requests and this dashboard issue are excluded.",
+            "- Plans consume execution capacity only while they expose a runnable Phase.",
+            "- Invalid Plan metadata fails closed instead of being scheduled.",
+            "- Opening, closing, reopening, editing, or changing labels refreshes the roadmap.",
+            "- Automation only changes roadmap labels and this dashboard issue.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -186,7 +240,9 @@ def main() -> int:
     if not isinstance(issues, list):
         raise ValueError("roadmap input must contain a list of GitHub issues")
     plan = build_plan(issues, load_config(args.config))
-    args.output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return 0
 
 
