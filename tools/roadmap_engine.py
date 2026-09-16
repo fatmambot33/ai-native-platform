@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from tools.plan_protocol import PlanProtocolError, next_runnable_phase
+from tools.plan_protocol import PlanProtocolError, next_runnable_phase, parse_phase
 
 SEVERITY_PATTERN = re.compile(r"\*\*Severity:\*\*\s*`?(critical|high|medium|low)`?", re.I)
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "unknown": 4}
@@ -19,7 +19,7 @@ PLAN_PROTOCOL_PATTERN = re.compile(r"^Protocol:\s*1\s*$", re.M)
 PLAN_STATE_PATTERN = re.compile(
     r"^State:\s*(draft|ready|running|blocked|verifying|done)\s*$", re.M
 )
-PHASE_PATTERN = re.compile(r"^- \[([ xX])\] #(\d+)\b", re.M)
+PHASE_PATTERN = re.compile(r"^- \[[ xX]\] #(\d+)\b", re.M)
 
 
 @dataclass(frozen=True)
@@ -103,17 +103,24 @@ def _issue_sort_key(issue: dict[str, Any], config: dict[str, Any]) -> tuple[Any,
 def _plan_metadata(
     issue: dict[str, Any], issues: list[dict[str, Any]]
 ) -> tuple[str, str, int | None]:
-    """Return validated state, phase progress, and next runnable Phase for a Plan."""
+    """Return validated state, semantic progress, and next Phase for a Plan."""
     body = str(issue.get("body") or "")
     state_match = PLAN_STATE_PATTERN.search(body)
     if state_match is None:
         raise PlanProtocolError(f"plan #{issue['number']} has invalid State")
-    phases = PHASE_PATTERN.findall(body)
-    if not phases:
+    phase_numbers = [int(value) for value in PHASE_PATTERN.findall(body)]
+    if not phase_numbers:
         raise PlanProtocolError(f"plan #{issue['number']} has no phases")
-    completed = sum(mark.lower() == "x" for mark, _ in phases)
-    progress = f"{completed}/{len(phases)}"
-    return state_match.group(1), progress, next_runnable_phase(issue, issues)
+
+    next_phase = next_runnable_phase(issue, issues)
+    by_number = {int(candidate["number"]): candidate for candidate in issues}
+    plan_number = int(issue["number"])
+    completed = sum(
+        parse_phase(by_number[number], plan_number).state == "done"
+        for number in phase_numbers
+    )
+    progress = f"{completed}/{len(phase_numbers)}"
+    return state_match.group(1), progress, next_phase
 
 
 def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
