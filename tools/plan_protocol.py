@@ -11,6 +11,7 @@ _PHASE_RE = re.compile(r"^- \[[ xX]\] #(\d+)\b", re.M)
 _REF_RE = re.compile(r"#(\d+)")
 _PLAN_STATES = {"draft", "ready", "running", "blocked", "verifying", "done"}
 _PHASE_STATES = {"ready", "running", "blocked", "verifying", "done"}
+_ACTIVE_PHASE_STATES = {"running", "verifying"}
 _REQUIRED_PLAN_SECTIONS = (
     "Plan",
     "Objective",
@@ -54,17 +55,19 @@ def _fields(body: str) -> dict[str, str]:
 
 
 def _section(body: str, heading: str) -> str | None:
-    """Return one exact level-two Markdown section, or ``None`` if absent."""
-    match = re.search(
+    """Return one exact level-two Markdown section, rejecting duplicates."""
+    pattern = re.compile(
         rf"^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
-        body,
         re.M | re.S,
     )
-    return match.group("body") if match else None
+    matches = list(pattern.finditer(body))
+    if len(matches) > 1:
+        raise PlanProtocolError(f"duplicate section: {heading}")
+    return matches[0].group("body") if matches else None
 
 
 def _require_sections(body: str, headings: tuple[str, ...], kind: str) -> None:
-    """Reject an executable contract missing any mandatory section."""
+    """Reject an executable contract missing or duplicating mandatory sections."""
     missing = [heading for heading in headings if _section(body, heading) is None]
     if missing:
         raise PlanProtocolError(f"{kind} is missing section: {missing[0]}")
@@ -146,12 +149,30 @@ def _open_linked_pr(phase: PhaseState, by_number: dict[int, dict[str, Any]]) -> 
     return state == "open"
 
 
+def _dependency_done(
+    number: int,
+    current_done: set[int],
+    by_number: dict[int, dict[str, Any]],
+) -> bool:
+    """Return whether reconstructed GitHub state proves a blocker complete."""
+    if number in current_done:
+        return True
+    issue = by_number.get(number)
+    if issue is None:
+        raise PlanProtocolError(f"missing dependency issue #{number}")
+    if str(issue.get("state") or "") != "closed":
+        return False
+    fields = _fields(str(issue.get("body") or ""))
+    semantic_state = fields.get("state")
+    return semantic_state in {None, "done"}
+
+
 def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> int | None:
     """Return the next runnable Phase number, failing closed on bad metadata.
 
-    Open linked PRs always win over selecting new work. Otherwise the first
-    ready Phase in Plan order whose dependencies are completed is selected.
-    Closed dependencies count only when their Phase state is ``done``.
+    Semantic activity and open linked PRs always win over selecting new work.
+    Otherwise the first ready Phase in Plan order whose dependencies have
+    authoritative completion evidence is selected.
     """
     plan_number = int(plan["number"])
     body = str(plan.get("body") or "")
@@ -181,14 +202,20 @@ def next_runnable_phase(plan: dict[str, Any], issues: list[dict[str, Any]]) -> i
             raise PlanProtocolError(f"missing phase issue #{number}")
         phases.append(parse_phase(issue, plan_number))
 
-    active = [phase for phase in phases if _open_linked_pr(phase, by_number)]
+    active = [
+        phase
+        for phase in phases
+        if phase.state in _ACTIVE_PHASE_STATES or _open_linked_pr(phase, by_number)
+    ]
     if len(active) > 1:
-        raise PlanProtocolError("multiple active linked phases")
+        raise PlanProtocolError("multiple active phases")
     if active:
         return active[0].number
 
     done = {phase.number for phase in phases if phase.state == "done"}
     for phase in phases:
-        if phase.state == "ready" and all(blocker in done for blocker in phase.blockers):
+        if phase.state == "ready" and all(
+            _dependency_done(blocker, done, by_number) for blocker in phase.blockers
+        ):
             return phase.number
     return None
