@@ -11,20 +11,12 @@ from typing import Any
 
 import yaml
 
-if __package__:
-    from tools.plan_protocol import (
-        PlanProtocolError,
-        next_runnable_phase,
-        parse_phase,
-        phase_numbers,
-    )
-else:
-    from plan_protocol import (  # type: ignore[import-not-found]
-        PlanProtocolError,
-        next_runnable_phase,
-        parse_phase,
-        phase_numbers,
-    )
+from tools.plan_protocol import (
+    PlanProtocolError,
+    next_runnable_phase,
+    parse_phase,
+    phase_numbers,
+)
 
 SEVERITY_PATTERN = re.compile(r"\*\*Severity:\*\*\s*`?(critical|high|medium|low)`?", re.I)
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "unknown": 4}
