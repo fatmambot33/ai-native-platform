@@ -11,8 +11,19 @@ from typing import Any
 
 import yaml
 
+from tools.plan_protocol import (
+    PlanProtocolError,
+    next_runnable_phase,
+    parse_phase,
+    phase_numbers,
+)
+
 SEVERITY_PATTERN = re.compile(r"\*\*Severity:\*\*\s*`?(critical|high|medium|low)`?", re.I)
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "unknown": 4}
+PLAN_PROTOCOL_PATTERN = re.compile(r"^Protocol:\s*(\S+)\s*$", re.M)
+PLAN_STATE_PATTERN = re.compile(
+    r"^State:\s*(draft|ready|running|blocked|verifying|done)\s*$", re.M
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +36,24 @@ class RoadmapItem:
     severity: str
     bucket: str
     label: str
+    plan_state: str | None = None
+    phase_progress: str | None = None
+    next_phase: int | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class InactivePlan:
+    """One Plan visible on the roadmap without consuming capacity."""
+
+    number: int
+    title: str
+    url: str
+    state: str
+    phase_progress: str
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
@@ -61,9 +90,25 @@ def _manual_priority(issue: dict[str, Any], config: dict[str, Any]) -> int:
     return min(matches) if matches else len(priorities)
 
 
+def _plan_section(body: str) -> str | None:
+    """Return the documented Plan metadata section when present exactly once."""
+    matches = list(
+        re.finditer(r"^## Plan\s*$\n(?P<body>.*?)(?=^## |\Z)", body, re.M | re.S)
+    )
+    if len(matches) > 1:
+        raise PlanProtocolError("duplicate section: Plan")
+    return matches[0].group("body") if matches else None
+
+
+def _is_plan(issue: dict[str, Any]) -> bool:
+    """Return whether an issue declares a protocol inside a Plan section."""
+    section = _plan_section(str(issue.get("body") or ""))
+    return section is not None and PLAN_PROTOCOL_PATTERN.search(section) is not None
+
+
 def _is_candidate(issue: dict[str, Any], config: dict[str, Any]) -> bool:
     """Return whether an issue belongs in the automated execution roadmap."""
-    if issue.get("pull_request"):
+    if str(issue.get("state") or "open") != "open" or issue.get("pull_request"):
         return False
     body = str(issue.get("body") or "")
     marker = str(config.get("dashboard", {}).get("marker", ""))
@@ -85,10 +130,61 @@ def _issue_sort_key(issue: dict[str, Any], config: dict[str, Any]) -> tuple[Any,
     )
 
 
+def _plan_metadata(
+    issue: dict[str, Any], issues: list[dict[str, Any]]
+) -> tuple[str, str, int | None]:
+    """Return validated state, semantic progress, and next Phase for a Plan."""
+    body = str(issue.get("body") or "")
+    plan_section = _plan_section(body)
+    if plan_section is None:
+        raise PlanProtocolError(f"plan #{issue['number']} is missing Plan section")
+    protocol_match = PLAN_PROTOCOL_PATTERN.search(plan_section)
+    if protocol_match is None or protocol_match.group(1) != "1":
+        raise PlanProtocolError(f"plan #{issue['number']} has unsupported Protocol")
+    state_match = PLAN_STATE_PATTERN.search(plan_section)
+    if state_match is None:
+        raise PlanProtocolError(f"plan #{issue['number']} has invalid State")
+    state = state_match.group(1)
+    if state == "draft":
+        return state, "draft", None
+
+    numbers = phase_numbers(issue)
+    next_phase = next_runnable_phase(issue, issues)
+    by_number = {int(candidate["number"]): candidate for candidate in issues}
+    plan_number = int(issue["number"])
+    completed = sum(
+        parse_phase(by_number[number], plan_number).state == "done" for number in numbers
+    )
+    progress = f"{completed}/{len(numbers)}"
+    return state, progress, next_phase
+
+
 def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
-    """Build a deterministic roadmap plan from open GitHub issues."""
-    candidates = [issue for issue in issues if _is_candidate(issue, config)]
-    candidates.sort(key=lambda issue: _issue_sort_key(issue, config))
+    """Build a deterministic roadmap plan from GitHub issues.
+
+    Runnable Plans compete for execution capacity. Valid non-runnable Plans
+    remain visible in a separate view without receiving a capacity label.
+    """
+    candidates: list[tuple[dict[str, Any], tuple[str, str, int | None] | None]] = []
+    inactive_plans: list[InactivePlan] = []
+    for issue in issues:
+        if not _is_candidate(issue, config):
+            continue
+        metadata = _plan_metadata(issue, issues) if _is_plan(issue) else None
+        if metadata is not None and metadata[2] is None:
+            inactive_plans.append(
+                InactivePlan(
+                    number=int(issue["number"]),
+                    title=str(issue.get("title") or f"Issue #{issue['number']}"),
+                    url=str(issue.get("html_url") or ""),
+                    state=metadata[0],
+                    phase_progress=metadata[1],
+                )
+            )
+            continue
+        candidates.append((issue, metadata))
+    candidates.sort(key=lambda pair: _issue_sort_key(pair[0], config))
+    inactive_plans.sort(key=lambda item: item.number)
 
     capacity = config.get("capacity", {})
     now_limit = max(0, int(capacity.get("now", 3)))
@@ -96,13 +192,14 @@ def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str
     labels = config.get("managed_labels", {})
 
     items: list[RoadmapItem] = []
-    for index, issue in enumerate(candidates):
+    for index, (issue, metadata) in enumerate(candidates):
         if index < now_limit:
             bucket = "now"
         elif index < now_limit + next_limit:
             bucket = "next"
         else:
             bucket = "later"
+        plan_state, phase_progress, next_phase = metadata or (None, None, None)
         items.append(
             RoadmapItem(
                 number=int(issue["number"]),
@@ -111,6 +208,9 @@ def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str
                 severity=_severity(issue),
                 bucket=bucket,
                 label=str(labels[bucket]),
+                plan_state=plan_state,
+                phase_progress=phase_progress,
+                next_phase=next_phase,
             )
         )
 
@@ -120,15 +220,20 @@ def build_plan(issues: list[dict[str, Any]], config: dict[str, Any]) -> dict[str
         "priority_labels": config.get("priority_labels", {}),
         "dashboard": config.get("dashboard", {}),
         "items": [item.as_dict() for item in items],
-        "body": render_dashboard(items, config),
+        "inactive_plans": [item.as_dict() for item in inactive_plans],
+        "body": render_dashboard(items, inactive_plans, config),
     }
 
 
-def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
+def render_dashboard(
+    items: list[RoadmapItem], inactive_plans: list[InactivePlan], config: dict[str, Any]
+) -> str:
     """Render the managed roadmap dashboard issue body."""
     dashboard = config.get("dashboard", {})
     marker = str(dashboard.get("marker", "<!-- ai-native-roadmap-dashboard -->"))
-    priorities = ", ".join(f"`{label}`" for label in config.get("priority_labels", {}))
+    priorities = ", ".join(
+        f"`{label}`" for label in config.get("priority_labels", {})
+    )
     lines = [
         marker,
         "# Product roadmap",
@@ -139,7 +244,6 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
         f"Human priority overrides: {priorities or 'none configured'}.",
         "Within the same priority, higher severity and older issues run first.",
     ]
-
     for bucket, heading in (("now", "Now"), ("next", "Next"), ("later", "Later")):
         lines.extend(["", f"## {heading}", ""])
         selected = [item for item in items if item.bucket == bucket]
@@ -148,8 +252,21 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
             continue
         for item in selected:
             link = f"[{item.title}]({item.url})" if item.url else item.title
-            lines.append(f"- #{item.number} {link} — `{item.severity}`")
-
+            detail = f" — `{item.severity}`"
+            if item.plan_state is not None:
+                detail += (
+                    f" — Plan `{item.plan_state}`, phases {item.phase_progress}, "
+                    f"next #{item.next_phase}"
+                )
+            lines.append(f"- #{item.number} {link}{detail}")
+    lines.extend(["", "## Plans outside capacity", ""])
+    if not inactive_plans:
+        lines.append("- No non-runnable Plans.")
+    for item in inactive_plans:
+        link = f"[{item.title}]({item.url})" if item.url else item.title
+        lines.append(
+            f"- #{item.number} {link} — Plan `{item.state}`, phases {item.phase_progress}"
+        )
     lines.extend(
         [
             "",
@@ -157,7 +274,10 @@ def render_dashboard(items: list[RoadmapItem], config: dict[str, Any]) -> str:
             "",
             "- Only open issues with a configured candidate label are managed.",
             "- Pull requests and this dashboard issue are excluded.",
-            "- Opening, closing, reopening, editing, or changing labels refreshes the roadmap.",
+            "- Plans consume execution capacity only while they expose a runnable Phase.",
+            "- Non-runnable Plans remain visible outside capacity buckets.",
+            "- Invalid Plan metadata fails closed instead of being scheduled.",
+            "- Issue and linked pull-request state changes refresh the roadmap.",
             "- Automation only changes roadmap labels and this dashboard issue.",
         ]
     )
@@ -182,12 +302,13 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-
     issues = json.loads(args.input.read_text(encoding="utf-8"))
     if not isinstance(issues, list):
         raise ValueError("roadmap input must contain a list of GitHub issues")
     plan = build_plan(issues, load_config(args.config))
-    args.output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return 0
 
 
