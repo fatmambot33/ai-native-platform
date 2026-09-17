@@ -33,6 +33,15 @@ class ResolvedCapability:
     provenance: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class DoctorFinding:
+    """One deterministic derived-repository doctor finding."""
+
+    code: str
+    message: str
+    path: str
+
+
 def _schema_path() -> Path:
     """Return the canonical inheritance schema path."""
     return Path(__file__).resolve().parents[1] / "schemas" / "ai-native-derived.schema.json"
@@ -123,3 +132,31 @@ def resolve(data: Mapping[str, Any]) -> dict[str, ResolvedCapability]:
             provenance=tuple(provenance),
         )
     return resolved
+
+
+def doctor(root: Path) -> list[DoctorFinding]:
+    """Return deterministic findings for an opted-in derived repository.
+
+    Repositories without a declaration are not derived repositories and remain
+    compatible with the pre-inheritance contract. A present declaration is
+    validated and resolved fail closed; doctor never mutates repository state.
+    """
+    declaration_path = root / ".ai-native" / "derived.yaml"
+    if not declaration_path.exists():
+        return []
+    try:
+        data = load_declaration(declaration_path)
+        resolved = resolve(data)
+    except (OSError, yaml.YAMLError, InheritanceError) as exc:
+        return [DoctorFinding("inheritance.invalid", str(exc), ".ai-native/derived.yaml")]
+
+    missing = [name for name in CAPABILITIES if name not in resolved]
+    if missing:
+        return [
+            DoctorFinding(
+                "inheritance.resolution_incomplete",
+                f"required capabilities did not resolve: {', '.join(missing)}",
+                ".ai-native/derived.yaml",
+            )
+        ]
+    return []
