@@ -5,7 +5,13 @@ import copy
 import pytest
 import yaml
 
-from tools.inheritance import InheritanceError, doctor, load_declaration, resolve, validate_declaration
+from tools.inheritance import (
+    InheritanceError,
+    doctor,
+    load_declaration,
+    resolve,
+    validate_declaration,
+)
 
 
 def declaration() -> dict:
