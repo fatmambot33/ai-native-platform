@@ -37,7 +37,7 @@ ai-native = "ai_native_entry:main"
 
 [tool.setuptools]
 py-modules = ["ai_native", "ai_native_entry"]
-packages = ["tools"]
+packages = ["ai_native_platform"]
 
 [tool.setuptools.data-files]
 "share/ai-native-platform" = [

@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 import ai_native
-from tools.inheritance import doctor as inheritance_doctor
+from ai_native_platform.inheritance import doctor as inheritance_doctor
 
 
 def command_doctor(args: argparse.Namespace) -> int:

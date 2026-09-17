@@ -12,7 +12,7 @@ A derived repository declares `.ai-native/derived.yaml`:
 version: 1
 platform:
   repository: fatmambot33/ai-native-platform
-  ref: v0.3.0
+  ref: b2793f9fae645df1bda7492da01627396fc5e29f
 profile: library
 capabilities:
   welcome: inherit
@@ -23,7 +23,7 @@ ownership:
   local: []
 ```
 
-`platform.repository` identifies the contract provider. `platform.ref` MUST be an immutable semantic version or 40-character commit SHA. `profile` is optional; when present it names exactly one profile registered by `standard/AI_NATIVE_PLATFORM.yaml`. Unknown contract versions, profiles, capabilities, modes, duplicate YAML keys, or ownership declarations fail closed.
+The example pins a commit that contains the inheritance contract; consumers should pin an immutable release containing the contract when one is available. `platform.repository` identifies the contract provider. `platform.ref` MUST be an immutable semantic version or 40-character commit SHA. `profile` is optional; when present it names exactly one profile registered by `standard/AI_NATIVE_PLATFORM.yaml`. Unknown contract versions, profiles, capabilities, modes, duplicate YAML keys, or ownership declarations fail closed.
 
 ## Resolution order
 
@@ -39,14 +39,7 @@ Every resolved capability records its contributing layers in that order. Consume
 
 ## Capability composition
 
-The v1 modes are:
-
-- `inherit`: consume the value produced by the preceding platform/profile layers;
-- `append`: preserve inherited behavior and append repository-local extensions;
-- `override`: replace inherited behavior explicitly and record repository provenance;
-- `disable`: intentionally remove the capability from the resolved repository contract.
-
-A mode that requires repository content (`append` or `override`) is invalid without the corresponding local extension/value. `inherit` and `disable` cannot carry an extension. Empty extension arrays are invalid; omit an extension key when it has no local content. Conflicting declarations fail closed rather than selecting an arbitrary winner.
+The v1 modes are `inherit`, `append`, `override`, and `disable`. `append` and `override` require corresponding repository-local content; `inherit` and `disable` cannot carry an extension. Empty extension arrays are invalid; omit an extension key when it has no local content. Conflicting declarations fail closed rather than selecting an arbitrary winner.
 
 The initial inherited capability kernel is `welcome`, `troubleshooting`, `update`, and `doctor`. `welcome` and `troubleshooting` remain deterministic capabilities: skills or agent prompts may orchestrate them, but the reusable behavior and validation contract are not embedded only in a prompt.
 
@@ -56,29 +49,16 @@ Profiles are platform-owned overlays and use the same names as the authoritative
 
 ## Ownership
 
-Artifact ownership is declared now so the Phase 2 update engine can enforce it later:
+Artifact ownership is declared now so the Phase 2 update engine can enforce it later. The ownership classes are `inherited`, `managed`, `merged`, and `local`; local artifacts MUST NOT be overwritten by platform update.
 
-- `inherited`: materialized entirely from platform/profile state and safe to replace with the compatible inherited version;
-- `managed`: platform-managed artifact with explicit repository inputs;
-- `merged`: platform-owned structure containing repository-owned extension regions;
-- `local`: repository-owned artifact that platform update MUST NOT overwrite.
-
-Ownership paths are portable repository-relative POSIX paths. Absolute paths, traversal segments, Windows drive paths, and backslash-separated Windows paths fail closed. Phase 1 defines and validates ownership metadata only. It does not implement filesystem mutation or destructive update behavior.
+Ownership paths are portable repository-relative POSIX paths. Absolute paths, traversal segments, NUL bytes, Windows drive paths, and backslash-separated Windows paths fail closed. Cross-owner paths are compared case-insensitively so declarations remain unambiguous on default Windows and macOS filesystems. Phase 1 defines and validates ownership metadata only; it does not implement filesystem mutation or destructive update behavior.
 
 ## Doctor requirements
 
-A derived repository is compliant only when deterministic validation proves that:
+A derived repository is compliant only when deterministic validation proves that the declaration matches the versioned schema, the platform reference is immutable, the selected profile exists, capability modes compose without conflicts, required inherited capabilities resolve, ownership is portable and unambiguous, and provenance is stable.
 
-- the declaration matches the versioned schema;
-- the platform reference is immutable;
-- the selected profile exists in the canonical standard registry;
-- capability modes compose without conflicts;
-- required inherited capabilities resolve;
-- ownership paths are repository-relative, non-overlapping where ownership would be ambiguous, and do not escape the repository;
-- resolved provenance is stable for identical inputs.
-
-`ai-native doctor` must report declaration/read/resolution failures as deterministic findings, including malformed encoding, duplicate keys, and unreadable or broken-symlink declarations. It must not repair, migrate, or overwrite repository content in Phase 1.
+`ai-native doctor` reports declaration, filesystem metadata/read, schema, and resolution failures as deterministic findings, including malformed encoding, duplicate keys, corrupt inheritance schemas, and unreadable or broken-symlink declarations. It must not repair, migrate, or overwrite repository content in Phase 1.
 
 ## Distribution and compatibility
 
-The Python distribution includes the inheritance validator and `ai-native-derived.schema.json`, so installed `ai-native doctor` has the same contract as a source checkout. Contract version 1 is additive to the existing AI Native product-manifest contract. Existing repositories that do not declare `.ai-native/derived.yaml` retain their current behavior. Opting into inheritance is explicit. Future incompatible inheritance changes require a new contract version; a validator MUST reject a newer unsupported version rather than guessing compatibility.
+The Python distribution includes the inheritance validator under the project-specific `ai_native_platform` package and includes `ai-native-derived.schema.json`, so installed `ai-native doctor` has the same contract as a source checkout without co-owning a generic top-level package namespace. Contract version 1 is additive to the existing AI Native product-manifest contract. Existing repositories that do not declare `.ai-native/derived.yaml` retain their current behavior. Opting into inheritance is explicit. Future incompatible inheritance changes require a new contract version; a validator MUST reject a newer unsupported version rather than guessing compatibility.

@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 
 CAPABILITIES = ("welcome", "troubleshooting", "update", "doctor")
 PROFILES: dict[str, dict[str, tuple[str, ...]]] = {
@@ -93,6 +94,7 @@ def load_declaration(path: Path) -> dict[str, Any]:
 def _schema_errors(data: Mapping[str, Any]) -> list[str]:
     """Return stable JSON Schema validation errors."""
     schema = json.loads(_schema_path().read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
     return [
         f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: {error.message}"
@@ -106,6 +108,7 @@ def _safe_path(value: str) -> PurePosixPath:
     windows_path = PureWindowsPath(value)
     if (
         not value
+        or "\0" in value
         or "\\" in value
         or posix_path.is_absolute()
         or windows_path.is_absolute()
@@ -117,8 +120,15 @@ def _safe_path(value: str) -> PurePosixPath:
     return posix_path
 
 
+def _portable_path(path: PurePosixPath) -> PurePosixPath:
+    """Normalize a path for portable case-insensitive ownership comparison."""
+    return PurePosixPath(*(part.casefold() for part in path.parts))
+
+
 def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
-    """Return whether two ownership paths overlap hierarchically."""
+    """Return whether two ownership paths overlap hierarchically on supported filesystems."""
+    left = _portable_path(left)
+    right = _portable_path(right)
     return left == right or left in right.parents or right in left.parents
 
 
@@ -190,12 +200,24 @@ def doctor(root: Path) -> list[DoctorFinding]:
     validated and resolved fail closed; doctor never mutates repository state.
     """
     declaration_path = root / ".ai-native" / "derived.yaml"
-    if not declaration_path.exists() and not declaration_path.is_symlink():
+    try:
+        declaration_path.lstat()
+    except FileNotFoundError:
         return []
+    except OSError as exc:
+        return [DoctorFinding("inheritance.invalid", str(exc), ".ai-native/derived.yaml")]
+
     try:
         data = load_declaration(declaration_path)
         resolved = resolve(data)
-    except (OSError, UnicodeError, yaml.YAMLError, InheritanceError) as exc:
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        SchemaError,
+        yaml.YAMLError,
+        InheritanceError,
+    ) as exc:
         return [DoctorFinding("inheritance.invalid", str(exc), ".ai-native/derived.yaml")]
 
     missing = [name for name in CAPABILITIES if name not in resolved]
