@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+import sysconfig
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import yaml
@@ -14,13 +15,40 @@ from jsonschema import Draft202012Validator
 
 CAPABILITIES = ("welcome", "troubleshooting", "update", "doctor")
 PROFILES: dict[str, dict[str, tuple[str, ...]]] = {
-    "python-library": {capability: () for capability in CAPABILITIES}
+    "library": {capability: () for capability in CAPABILITIES}
 }
 REF_PATTERN = re.compile(r"(?:[0-9a-f]{40}|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)")
+SCHEMA_NAME = "ai-native-derived.schema.json"
 
 
 class InheritanceError(ValueError):
     """Raised when a derived-repository declaration is unsafe or inconsistent."""
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys."""
+
+
+def _construct_unique_mapping(
+    loader: _UniqueKeyLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict[Any, Any]:
+    """Construct one mapping while rejecting ambiguous duplicate keys."""
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in mapping
+        except TypeError as exc:
+            raise InheritanceError("derived declaration contains an invalid mapping key") from exc
+        if duplicate:
+            raise InheritanceError(f"duplicate declaration key: {key!r}")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
 
 
 @dataclass(frozen=True)
@@ -44,13 +72,19 @@ class DoctorFinding:
 
 
 def _schema_path() -> Path:
-    """Return the canonical inheritance schema path."""
-    return Path(__file__).resolve().parents[1] / "schemas" / "ai-native-derived.schema.json"
+    """Return the inheritance schema from a checkout or installed distribution."""
+    checkout = Path(__file__).resolve().parents[1] / "schemas" / SCHEMA_NAME
+    if checkout.is_file():
+        return checkout
+    installed = Path(sysconfig.get_path("data")) / "share" / "ai-native-platform" / SCHEMA_NAME
+    if installed.is_file():
+        return installed
+    raise FileNotFoundError(f"Unable to locate {SCHEMA_NAME}")
 
 
 def load_declaration(path: Path) -> dict[str, Any]:
-    """Load a derived-repository YAML declaration."""
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    """Load a derived-repository YAML declaration without ambiguous keys."""
+    data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     if not isinstance(data, dict):
         raise InheritanceError("derived declaration must contain a mapping")
     return data
@@ -67,11 +101,20 @@ def _schema_errors(data: Mapping[str, Any]) -> list[str]:
 
 
 def _safe_path(value: str) -> PurePosixPath:
-    """Validate and normalize one repository-relative ownership path."""
-    path = PurePosixPath(value)
-    if path.is_absolute() or not value or ".." in path.parts or "." in path.parts:
+    """Validate and normalize one portable repository-relative ownership path."""
+    posix_path = PurePosixPath(value)
+    windows_path = PureWindowsPath(value)
+    if (
+        not value
+        or "\\" in value
+        or posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or ".." in posix_path.parts
+        or "." in posix_path.parts
+    ):
         raise InheritanceError(f"unsafe ownership path: {value!r}")
-    return path
+    return posix_path
 
 
 def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
@@ -88,6 +131,10 @@ def validate_declaration(data: Mapping[str, Any]) -> None:
     ref = str(data["platform"]["ref"])
     if REF_PATTERN.fullmatch(ref) is None:
         raise InheritanceError("platform.ref must be immutable")
+
+    profile = data.get("profile")
+    if profile is not None and profile not in PROFILES:
+        raise InheritanceError(f"unknown profile: {profile!r}")
 
     extensions = data.get("extensions", {})
     for capability, mode in data["capabilities"].items():
@@ -143,12 +190,12 @@ def doctor(root: Path) -> list[DoctorFinding]:
     validated and resolved fail closed; doctor never mutates repository state.
     """
     declaration_path = root / ".ai-native" / "derived.yaml"
-    if not declaration_path.exists():
+    if not declaration_path.exists() and not declaration_path.is_symlink():
         return []
     try:
         data = load_declaration(declaration_path)
         resolved = resolve(data)
-    except (OSError, yaml.YAMLError, InheritanceError) as exc:
+    except (OSError, UnicodeError, yaml.YAMLError, InheritanceError) as exc:
         return [DoctorFinding("inheritance.invalid", str(exc), ".ai-native/derived.yaml")]
 
     missing = [name for name in CAPABILITIES if name not in resolved]
