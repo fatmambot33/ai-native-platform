@@ -23,7 +23,9 @@ def declaration() -> dict:
         "version": 1,
         "platform": {"repository": "fatmambot33/ai-native-platform", "ref": PLATFORM_REF},
         "profile": "library",
-        "capabilities": {name: "inherit" for name in ("welcome", "troubleshooting", "update", "doctor")},
+        "capabilities": {
+            name: "inherit" for name in ("welcome", "troubleshooting", "update", "doctor")
+        },
         "ownership": {"local": ["src/local.py"]},
     }
 
@@ -38,8 +40,13 @@ def test_resolve_is_deterministic_and_records_provenance() -> None:
 
 def test_composition_modes_record_selected_provenance() -> None:
     candidate = declaration()
-    candidate["capabilities"].update(welcome="append", troubleshooting="override", doctor="disable")
-    candidate["extensions"] = {"welcome": ["welcome-local"], "troubleshooting": ["troubleshooting-local"]}
+    candidate["capabilities"].update(
+        welcome="append", troubleshooting="override", doctor="disable"
+    )
+    candidate["extensions"] = {
+        "welcome": ["welcome-local"],
+        "troubleshooting": ["troubleshooting-local"],
+    }
     resolved = resolve(candidate)
     assert resolved["welcome"].provenance == ("platform", "profile:library", "repository")
     assert resolved["troubleshooting"].provenance == ("repository",)
@@ -80,8 +87,16 @@ def test_unknown_contract_profile_capability_and_mode_fail_closed() -> None:
 
 def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
     unsafe_paths = (
-        "../outside", "..\\outside", "C:\\outside", "\\\\server\\share", "bad\0path",
-        "CON", "dir/aux.txt", "dir/file*", "dir/name.", "dir/name ",
+        "../outside",
+        "..\\outside",
+        "C:\\outside",
+        "\\\\server\\share",
+        "bad\0path",
+        "CON",
+        "dir/aux.txt",
+        "dir/file*",
+        "dir/name.",
+        "dir/name ",
     )
     for unsafe in unsafe_paths:
         candidate = declaration()
@@ -102,11 +117,19 @@ def test_large_ownership_manifest_validates() -> None:
 
 
 def test_platform_reference_semver_is_fail_closed() -> None:
-    for valid in ("1.2.3", "v1.2.3", "1.2.3-alpha.1", "1.2.3+build.7", "1.2.3-rc.1+build.7"):
+    valid_refs = (
+        "1.2.3",
+        "v1.2.3",
+        "1.2.3-alpha.1",
+        "1.2.3+build.7",
+        "1.2.3-rc.1+build.7",
+    )
+    for valid in valid_refs:
         candidate = declaration()
         candidate["platform"]["ref"] = valid
         validate_declaration(candidate)
-    for invalid in ("main", "01.2.3", "1.02.3", "1.2.03", "1.2.3-01", "1.2.3-alpha..1"):
+    invalid_refs = ("main", "01.2.3", "1.02.3", "1.2.03", "1.2.3-01", "1.2.3-alpha..1")
+    for invalid in invalid_refs:
         candidate = declaration()
         candidate["platform"]["ref"] = invalid
         with pytest.raises(InheritanceError):
@@ -186,11 +209,14 @@ def test_doctor_reports_broken_declaration_symlink(tmp_path) -> None:
 
 def test_doctor_reports_presence_check_failure(tmp_path, monkeypatch) -> None:
     from ai_native_platform import inheritance
+
     original_lstat = inheritance.Path.lstat
+
     def failing_lstat(path):
         if path.name == "derived.yaml":
             raise PermissionError("denied")
         return original_lstat(path)
+
     monkeypatch.setattr(inheritance.Path, "lstat", failing_lstat)
     (tmp_path / ".ai-native").mkdir()
     assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
@@ -198,10 +224,16 @@ def test_doctor_reports_presence_check_failure(tmp_path, monkeypatch) -> None:
 
 def test_doctor_reports_corrupt_schema_and_reference(tmp_path, monkeypatch) -> None:
     from ai_native_platform import inheritance
+
     schema = tmp_path / "schema.json"
     monkeypatch.setattr(inheritance, "_schema_path", lambda: schema)
     _write_declaration(tmp_path)
-    for content in ("{", json.dumps({"type": 3}), json.dumps({"$ref": "#/$defs/missing"})):
+    malformed_schemas = (
+        "{",
+        json.dumps({"type": 3}),
+        json.dumps({"$ref": "#/$defs/missing"}),
+    )
+    for content in malformed_schemas:
         schema.write_text(content, encoding="utf-8")
         assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
 
