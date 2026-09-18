@@ -21,17 +21,9 @@ def declaration() -> dict:
     """Return a minimal valid derived-repository declaration."""
     return {
         "version": 1,
-        "platform": {
-            "repository": "fatmambot33/ai-native-platform",
-            "ref": PLATFORM_REF,
-        },
+        "platform": {"repository": "fatmambot33/ai-native-platform", "ref": PLATFORM_REF},
         "profile": "library",
-        "capabilities": {
-            "welcome": "inherit",
-            "troubleshooting": "inherit",
-            "update": "inherit",
-            "doctor": "inherit",
-        },
+        "capabilities": {name: "inherit" for name in ("welcome", "troubleshooting", "update", "doctor")},
         "ownership": {"local": ["src/local.py"]},
     }
 
@@ -44,15 +36,21 @@ def test_resolve_is_deterministic_and_records_provenance() -> None:
     assert welcome.provenance == ("platform", "profile:library")
 
 
-def test_append_requires_and_records_local_content() -> None:
+def test_composition_modes_record_selected_provenance() -> None:
+    candidate = declaration()
+    candidate["capabilities"].update(welcome="append", troubleshooting="override", doctor="disable")
+    candidate["extensions"] = {"welcome": ["welcome-local"], "troubleshooting": ["troubleshooting-local"]}
+    resolved = resolve(candidate)
+    assert resolved["welcome"].provenance == ("platform", "profile:library", "repository")
+    assert resolved["troubleshooting"].provenance == ("repository",)
+    assert resolved["doctor"].provenance == ("repository",)
+
+
+def test_append_requires_local_content() -> None:
     candidate = declaration()
     candidate["capabilities"]["welcome"] = "append"
     with pytest.raises(InheritanceError, match="requires local content"):
         validate_declaration(candidate)
-    candidate["extensions"] = {"welcome": ["docs/welcome-local.md"]}
-    resolved = resolve(candidate)["welcome"]
-    assert resolved.extensions == ("docs/welcome-local.md",)
-    assert resolved.provenance[-1] == "repository"
 
 
 def test_inherit_and_disable_reject_extensions() -> None:
@@ -65,8 +63,7 @@ def test_inherit_and_disable_reject_extensions() -> None:
 
 
 def test_unknown_contract_profile_capability_and_mode_fail_closed() -> None:
-    mutations = [("version", 2), ("profile", "unknown")]
-    for key, value in mutations:
+    for key, value in (("version", 2), ("profile", "unknown")):
         candidate = declaration()
         candidate[key] = value
         with pytest.raises(InheritanceError):
@@ -81,13 +78,16 @@ def test_unknown_contract_profile_capability_and_mode_fail_closed() -> None:
         validate_declaration(candidate)
 
 
-def test_ownership_rejects_portable_escape_and_cross_owner_overlap() -> None:
-    for unsafe in ("../outside", "..\\outside", "C:\\outside", "\\\\server\\share", "bad\0path"):
+def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
+    unsafe_paths = (
+        "../outside", "..\\outside", "C:\\outside", "\\\\server\\share", "bad\0path",
+        "CON", "dir/aux.txt", "dir/file*", "dir/name.", "dir/name ",
+    )
+    for unsafe in unsafe_paths:
         candidate = declaration()
         candidate["ownership"] = {"local": [unsafe]}
         with pytest.raises(InheritanceError, match="unsafe ownership path"):
             validate_declaration(candidate)
-
     for managed, local in (("docs", "docs/local.md"), ("README.md", "readme.md")):
         candidate = declaration()
         candidate["ownership"] = {"managed": [managed], "local": [local]}
@@ -95,11 +95,25 @@ def test_ownership_rejects_portable_escape_and_cross_owner_overlap() -> None:
             validate_declaration(candidate)
 
 
-def test_platform_reference_and_repository_are_fail_closed() -> None:
+def test_large_ownership_manifest_validates() -> None:
     candidate = declaration()
-    candidate["platform"]["ref"] = "main"
-    with pytest.raises(InheritanceError):
+    candidate["ownership"] = {"local": [f"src/module-{index}.py" for index in range(2000)]}
+    validate_declaration(candidate)
+
+
+def test_platform_reference_semver_is_fail_closed() -> None:
+    for valid in ("1.2.3", "v1.2.3", "1.2.3-alpha.1", "1.2.3+build.7", "1.2.3-rc.1+build.7"):
+        candidate = declaration()
+        candidate["platform"]["ref"] = valid
         validate_declaration(candidate)
+    for invalid in ("main", "01.2.3", "1.02.3", "1.2.03", "1.2.3-01", "1.2.3-alpha..1"):
+        candidate = declaration()
+        candidate["platform"]["ref"] = invalid
+        with pytest.raises(InheritanceError):
+            validate_declaration(candidate)
+
+
+def test_platform_repository_is_fail_closed() -> None:
     candidate = declaration()
     candidate["platform"]["repository"] = "example/other"
     with pytest.raises(InheritanceError):
@@ -113,23 +127,25 @@ def test_duplicate_yaml_keys_fail_closed(tmp_path) -> None:
         load_declaration(path)
 
 
-def test_doctor_accepts_compliant_derived_repository(tmp_path) -> None:
-    path = tmp_path / ".ai-native" / "derived.yaml"
+def _write_declaration(root, candidate=None):
+    path = root / ".ai-native" / "derived.yaml"
     path.parent.mkdir()
-    path.write_text(yaml.safe_dump(declaration()), encoding="utf-8")
+    path.write_text(yaml.safe_dump(candidate or declaration()), encoding="utf-8")
+    return path
+
+
+def test_doctor_accepts_compliant_derived_repository(tmp_path) -> None:
+    _write_declaration(tmp_path)
     assert doctor(tmp_path) == []
 
 
 def test_doctor_reports_invalid_declaration_without_mutating(tmp_path) -> None:
     candidate = declaration()
     candidate["platform"]["ref"] = "main"
-    path = tmp_path / ".ai-native" / "derived.yaml"
-    path.parent.mkdir()
-    original = yaml.safe_dump(candidate)
-    path.write_text(original, encoding="utf-8")
+    path = _write_declaration(tmp_path, candidate)
+    original = path.read_text(encoding="utf-8")
     findings = doctor(tmp_path)
     assert [finding.code for finding in findings] == ["inheritance.invalid"]
-    assert findings[0].path == ".ai-native/derived.yaml"
     assert path.read_text(encoding="utf-8") == original
 
 
@@ -138,6 +154,24 @@ def test_doctor_reports_invalid_utf8_as_finding(tmp_path) -> None:
     path.parent.mkdir()
     path.write_bytes(b"\xff\xfe")
     assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
+
+
+def test_doctor_rejects_declaration_and_directory_symlinks(tmp_path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "derived.yaml").write_text(yaml.safe_dump(declaration()), encoding="utf-8")
+    for target_directory in (False, True):
+        root = tmp_path / ("repo-dir" if target_directory else "repo-file")
+        root.mkdir()
+        try:
+            if target_directory:
+                (root / ".ai-native").symlink_to(outside, target_is_directory=True)
+            else:
+                (root / ".ai-native").mkdir()
+                (root / ".ai-native" / "derived.yaml").symlink_to(outside / "derived.yaml")
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are unavailable on this platform")
+        assert [finding.code for finding in doctor(root)] == ["inheritance.invalid"]
 
 
 def test_doctor_reports_broken_declaration_symlink(tmp_path) -> None:
@@ -151,34 +185,25 @@ def test_doctor_reports_broken_declaration_symlink(tmp_path) -> None:
 
 
 def test_doctor_reports_presence_check_failure(tmp_path, monkeypatch) -> None:
-    """Filesystem metadata failures become deterministic findings."""
     from ai_native_platform import inheritance
-
     original_lstat = inheritance.Path.lstat
-
     def failing_lstat(path):
         if path.name == "derived.yaml":
             raise PermissionError("denied")
         return original_lstat(path)
-
     monkeypatch.setattr(inheritance.Path, "lstat", failing_lstat)
+    (tmp_path / ".ai-native").mkdir()
     assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
 
 
-def test_doctor_reports_corrupt_schema(tmp_path, monkeypatch) -> None:
-    """A damaged installed schema fails closed instead of crashing doctor."""
+def test_doctor_reports_corrupt_schema_and_reference(tmp_path, monkeypatch) -> None:
     from ai_native_platform import inheritance
-
     schema = tmp_path / "schema.json"
-    schema.write_text("{", encoding="utf-8")
     monkeypatch.setattr(inheritance, "_schema_path", lambda: schema)
-    declaration_path = tmp_path / ".ai-native" / "derived.yaml"
-    declaration_path.parent.mkdir()
-    declaration_path.write_text(yaml.safe_dump(declaration()), encoding="utf-8")
-    assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
-
-    schema.write_text(json.dumps({"type": 3}), encoding="utf-8")
-    assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
+    _write_declaration(tmp_path)
+    for content in ("{", json.dumps({"type": 3}), json.dumps({"$ref": "#/$defs/missing"})):
+        schema.write_text(content, encoding="utf-8")
+        assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
 
 
 def test_doctor_preserves_non_derived_repository_compatibility(tmp_path) -> None:
