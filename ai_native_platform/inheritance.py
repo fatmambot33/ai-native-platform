@@ -20,10 +20,21 @@ CAPABILITIES = ("welcome", "troubleshooting", "update", "doctor")
 PROFILES: dict[str, dict[str, tuple[str, ...]]] = {
     "library": {capability: () for capability in CAPABILITIES}
 }
-_SEMVER = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+_SEMVER_CORE = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+_SEMVER_IDENTIFIER = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+_SEMVER_PRERELEASE = rf"(?:-{_SEMVER_IDENTIFIER}(?:\.{_SEMVER_IDENTIFIER})*)?"
+_SEMVER_BUILD = r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+_SEMVER = rf"{_SEMVER_CORE}{_SEMVER_PRERELEASE}{_SEMVER_BUILD}"
 REF_PATTERN = re.compile(rf"(?:[0-9a-f]{{40}}|v?{_SEMVER})")
 SCHEMA_NAME = "ai-native-derived.schema.json"
-_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+_WINDOWS_RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
 _WINDOWS_INVALID = frozenset('<>:"|?*')
 
 
