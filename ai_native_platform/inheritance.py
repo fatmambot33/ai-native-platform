@@ -6,6 +6,7 @@ import json
 import re
 import stat
 import sysconfig
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -32,8 +33,12 @@ _WINDOWS_RESERVED = {
     "PRN",
     "AUX",
     "NUL",
+    "CONIN$",
+    "CONOUT$",
     *(f"COM{i}" for i in range(1, 10)),
     *(f"LPT{i}" for i in range(1, 10)),
+    *(f"COM{i}" for i in "¹²³"),
+    *(f"LPT{i}" for i in "¹²³"),
 }
 _WINDOWS_INVALID = frozenset('<>:"|?*')
 
@@ -146,7 +151,7 @@ def _safe_path(value: str) -> PurePosixPath:
 
 def _portable_parts(path: PurePosixPath) -> tuple[str, ...]:
     """Return canonical path components for portable ownership comparison."""
-    return tuple(part.casefold() for part in path.parts)
+    return tuple(unicodedata.normalize("NFC", part).casefold() for part in path.parts)
 
 
 def _validate_ownership(entries: list[tuple[str, PurePosixPath]]) -> None:
