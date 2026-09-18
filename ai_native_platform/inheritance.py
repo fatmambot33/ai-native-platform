@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import stat
 import sysconfig
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -13,13 +14,17 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from referencing.exceptions import Unresolvable
 
 CAPABILITIES = ("welcome", "troubleshooting", "update", "doctor")
 PROFILES: dict[str, dict[str, tuple[str, ...]]] = {
     "library": {capability: () for capability in CAPABILITIES}
 }
-REF_PATTERN = re.compile(r"(?:[0-9a-f]{40}|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)")
+_SEMVER = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+REF_PATTERN = re.compile(rf"(?:[0-9a-f]{{40}}|v?{_SEMVER})")
 SCHEMA_NAME = "ai-native-derived.schema.json"
+_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+_WINDOWS_INVALID = frozenset('<>:"|?*')
 
 
 class InheritanceError(ValueError):
@@ -106,6 +111,13 @@ def _safe_path(value: str) -> PurePosixPath:
     """Validate and normalize one portable repository-relative ownership path."""
     posix_path = PurePosixPath(value)
     windows_path = PureWindowsPath(value)
+    unsafe_component = any(
+        not part
+        or part.endswith((" ", "."))
+        or any(char in _WINDOWS_INVALID or ord(char) < 32 for char in part)
+        or part.split(".", 1)[0].upper() in _WINDOWS_RESERVED
+        for part in posix_path.parts
+    )
     if (
         not value
         or "\0" in value
@@ -115,21 +127,40 @@ def _safe_path(value: str) -> PurePosixPath:
         or bool(windows_path.drive)
         or ".." in posix_path.parts
         or "." in posix_path.parts
+        or unsafe_component
     ):
         raise InheritanceError(f"unsafe ownership path: {value!r}")
     return posix_path
 
 
-def _portable_path(path: PurePosixPath) -> PurePosixPath:
-    """Normalize a path for portable case-insensitive ownership comparison."""
-    return PurePosixPath(*(part.casefold() for part in path.parts))
+def _portable_parts(path: PurePosixPath) -> tuple[str, ...]:
+    """Return canonical path components for portable ownership comparison."""
+    return tuple(part.casefold() for part in path.parts)
 
 
-def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
-    """Return whether two ownership paths overlap hierarchically on supported filesystems."""
-    left = _portable_path(left)
-    right = _portable_path(right)
-    return left == right or left in right.parents or right in left.parents
+def _validate_ownership(entries: list[tuple[str, PurePosixPath]]) -> None:
+    """Reject cross-owner aliases and prefixes in near-linear time."""
+    root: dict[str, Any] = {"owners": set(), "children": {}}
+    for owner, path in entries:
+        node = root
+        parts = _portable_parts(path)
+        for part in parts:
+            other = node["owners"] - {owner}
+            if other:
+                raise InheritanceError(
+                    f"ambiguous ownership: {owner}:{path} overlaps owner {sorted(other)[0]}"
+                )
+            node = node["children"].setdefault(part, {"owners": set(), "children": {}})
+        stack = [node]
+        while stack:
+            descendant = stack.pop()
+            other = descendant["owners"] - {owner}
+            if other:
+                raise InheritanceError(
+                    f"ambiguous ownership: {owner}:{path} overlaps owner {sorted(other)[0]}"
+                )
+            stack.extend(descendant["children"].values())
+        node["owners"].add(owner)
 
 
 def validate_declaration(data: Mapping[str, Any]) -> None:
@@ -160,12 +191,7 @@ def validate_declaration(data: Mapping[str, Any]) -> None:
         for owner, values in ownership.items():
             for value in values:
                 entries.append((str(owner), _safe_path(str(value))))
-    for index, (owner, path) in enumerate(entries):
-        for other_owner, other_path in entries[index + 1 :]:
-            if owner != other_owner and _paths_overlap(path, other_path):
-                raise InheritanceError(
-                    f"ambiguous ownership: {owner}:{path} overlaps {other_owner}:{other_path}"
-                )
+    _validate_ownership(entries)
 
 
 def resolve(data: Mapping[str, Any]) -> dict[str, ResolvedCapability]:
@@ -176,12 +202,16 @@ def resolve(data: Mapping[str, Any]) -> dict[str, ResolvedCapability]:
     resolved: dict[str, ResolvedCapability] = {}
     for capability in CAPABILITIES:
         mode = str(data["capabilities"][capability])
-        provenance = ["platform"]
+        inherited = ["platform"]
         if profile is not None:
-            provenance.append(f"profile:{profile}")
+            inherited.append(f"profile:{profile}")
         local = tuple(extensions.get(capability, ())) if isinstance(extensions, Mapping) else ()
-        if mode in {"append", "override"}:
-            provenance.append("repository")
+        if mode == "inherit":
+            provenance = inherited
+        elif mode == "append":
+            provenance = [*inherited, "repository"]
+        else:
+            provenance = ["repository"]
         resolved[capability] = ResolvedCapability(
             name=capability,
             mode=mode,
@@ -190,6 +220,17 @@ def resolve(data: Mapping[str, Any]) -> dict[str, ResolvedCapability]:
             provenance=tuple(provenance),
         )
     return resolved
+
+
+def _require_regular_declaration(root: Path, declaration_path: Path) -> None:
+    """Require repository-owned declaration components without following symlinks."""
+    ai_native = root / ".ai-native"
+    directory_stat = ai_native.lstat()
+    if stat.S_ISLNK(directory_stat.st_mode) or not stat.S_ISDIR(directory_stat.st_mode):
+        raise InheritanceError(".ai-native must be a real directory")
+    declaration_stat = declaration_path.lstat()
+    if stat.S_ISLNK(declaration_stat.st_mode) or not stat.S_ISREG(declaration_stat.st_mode):
+        raise InheritanceError("derived declaration must be a regular file")
 
 
 def doctor(root: Path) -> list[DoctorFinding]:
@@ -201,10 +242,10 @@ def doctor(root: Path) -> list[DoctorFinding]:
     """
     declaration_path = root / ".ai-native" / "derived.yaml"
     try:
-        declaration_path.lstat()
+        _require_regular_declaration(root, declaration_path)
     except FileNotFoundError:
         return []
-    except OSError as exc:
+    except (OSError, InheritanceError) as exc:
         return [DoctorFinding("inheritance.invalid", str(exc), ".ai-native/derived.yaml")]
 
     try:
@@ -215,6 +256,7 @@ def doctor(root: Path) -> list[DoctorFinding]:
         UnicodeError,
         json.JSONDecodeError,
         SchemaError,
+        Unresolvable,
         yaml.YAMLError,
         InheritanceError,
     ) as exc:
