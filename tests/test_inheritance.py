@@ -107,7 +107,11 @@ def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
         candidate["ownership"] = {"local": [unsafe]}
         with pytest.raises(InheritanceError, match="unsafe ownership path"):
             validate_declaration(candidate)
-    for managed, local in (\n        ("docs", "docs/local.md"),\n        ("README.md", "readme.md"),\n        ("docs/café.md", "docs/café.md"),\n    ):
+    for managed, local in (
+        ("docs", "docs/local.md"),
+        ("README.md", "readme.md"),
+        ("docs/café.md", "docs/café.md"),
+    ):
         candidate = declaration()
         candidate["ownership"] = {"managed": [managed], "local": [local]}
         with pytest.raises(InheritanceError, match="ambiguous ownership"):
