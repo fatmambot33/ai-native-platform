@@ -6,6 +6,8 @@
 /schemas/** @fatmambot33
 /standard/** @fatmambot33
 /ai_native.py @fatmambot33
+/ai_native_entry.py @fatmambot33
+/ai_native_platform/** @fatmambot33
 /validator/** @fatmambot33
 /templates/** @fatmambot33
 /consumers/registry.yaml @fatmambot33
