@@ -33,14 +33,16 @@ llm = [
 ]
 
 [project.scripts]
-ai-native = "ai_native:main"
+ai-native = "ai_native_entry:main"
 
 [tool.setuptools]
-py-modules = ["ai_native"]
+py-modules = ["ai_native", "ai_native_entry"]
+packages = ["ai_native_platform"]
 
 [tool.setuptools.data-files]
 "share/ai-native-platform" = [
   "schemas/ai-native-platform.schema.json",
+  "schemas/ai-native-derived.schema.json",
   "templates/AI_NATIVE_PLATFORM.yaml",
 ]
 
