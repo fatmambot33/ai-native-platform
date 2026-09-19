@@ -2,7 +2,7 @@
 /.github/dependabot.yml @fatmambot33
 /tools/** @fatmambot33
 /.github/CODEOWNERS @fatmambot33
-/actions/codex-review-gate/** @fatmambot33
+actions/codex-review-gate/** @fatmambot33
 /schemas/** @fatmambot33
 /standard/** @fatmambot33
 /ai_native.py @fatmambot33
@@ -11,6 +11,7 @@
 /validator/** @fatmambot33
 /templates/** @fatmambot33
 /consumers/registry.yaml @fatmambot33
+/docs/INHERITANCE.md @fatmambot33
 /docs/GOVERNANCE.md @fatmambot33
 /docs/AI_REVIEW_GOVERNANCE.md @fatmambot33
 /docs/SECURITY_EVIDENCE.md @fatmambot33
