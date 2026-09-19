@@ -1,11 +1,13 @@
 """Tests for the AI Native inheritance contract."""
 
+import argparse
 import copy
 import json
 
 import pytest
 import yaml
 
+from ai_native_entry import _inheritance_findings
 from ai_native_platform.inheritance import (
     InheritanceError,
     doctor,
@@ -259,3 +261,14 @@ def test_doctor_preserves_non_derived_repository_compatibility(tmp_path) -> None
     assert doctor(tmp_path) == []
     (tmp_path / ".ai-native").write_text("legacy marker", encoding="utf-8")
     assert doctor(tmp_path) == []
+
+
+def test_entrypoint_reports_root_resolution_failure(tmp_path) -> None:
+    loop = tmp_path / "loop"
+    try:
+        loop.symlink_to(loop)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are unavailable on this platform")
+    args = argparse.Namespace(root=str(loop), manifest="AI_NATIVE_PLATFORM.yaml")
+    findings = _inheritance_findings(args)
+    assert [finding.code for finding in findings] == ["inheritance.invalid"]
