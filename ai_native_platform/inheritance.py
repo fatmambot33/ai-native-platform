@@ -41,6 +41,7 @@ _WINDOWS_RESERVED = {
     *(f"LPT{i}" for i in "¹²³"),
 }
 _WINDOWS_INVALID = frozenset('<>:"|?*')
+_MAX_PORTABLE_COMPONENT_BYTES = 255
 
 
 class InheritanceError(ValueError):
@@ -129,6 +130,7 @@ def _safe_path(value: str) -> PurePosixPath:
     windows_path = PureWindowsPath(value)
     unsafe_component = any(
         not part
+        or len(part.encode("utf-8")) > _MAX_PORTABLE_COMPONENT_BYTES
         or part.endswith((" ", "."))
         or any(char in _WINDOWS_INVALID or ord(char) < 32 for char in part)
         or part.split(".", 1)[0].upper() in _WINDOWS_RESERVED
@@ -238,15 +240,18 @@ def resolve(data: Mapping[str, Any]) -> dict[str, ResolvedCapability]:
     return resolved
 
 
-def _require_regular_declaration(root: Path, declaration_path: Path) -> None:
-    """Require repository-owned declaration components without following symlinks."""
+def _require_regular_declaration(root: Path, declaration_path: Path) -> bool:
+    """Check for a repository-owned declaration without following symlinks."""
     ai_native = root / ".ai-native"
     directory_stat = ai_native.lstat()
-    if stat.S_ISLNK(directory_stat.st_mode) or not stat.S_ISDIR(directory_stat.st_mode):
-        raise InheritanceError(".ai-native must be a real directory")
+    if stat.S_ISLNK(directory_stat.st_mode):
+        raise InheritanceError(".ai-native must not be a symlink")
+    if not stat.S_ISDIR(directory_stat.st_mode):
+        return False
     declaration_stat = declaration_path.lstat()
     if stat.S_ISLNK(declaration_stat.st_mode) or not stat.S_ISREG(declaration_stat.st_mode):
         raise InheritanceError("derived declaration must be a regular file")
+    return True
 
 
 def doctor(root: Path) -> list[DoctorFinding]:
@@ -258,7 +263,8 @@ def doctor(root: Path) -> list[DoctorFinding]:
     """
     declaration_path = root / ".ai-native" / "derived.yaml"
     try:
-        _require_regular_declaration(root, declaration_path)
+        if not _require_regular_declaration(root, declaration_path):
+            return []
     except FileNotFoundError:
         return []
     except (OSError, InheritanceError) as exc:
@@ -275,6 +281,7 @@ def doctor(root: Path) -> list[DoctorFinding]:
         Unresolvable,
         yaml.YAMLError,
         InheritanceError,
+        RecursionError,
     ) as exc:
         return [DoctorFinding("inheritance.invalid", str(exc), ".ai-native/derived.yaml")]
 
