@@ -101,6 +101,8 @@ def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
         "dir/file*",
         "dir/name.",
         "dir/name ",
+        "a" * 256,
+        "é" * 128,
     )
     for unsafe in unsafe_paths:
         candidate = declaration()
@@ -187,6 +189,13 @@ def test_doctor_reports_invalid_utf8_as_finding(tmp_path) -> None:
     assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
 
 
+def test_doctor_reports_parser_recursion_as_finding(tmp_path) -> None:
+    path = tmp_path / ".ai-native" / "derived.yaml"
+    path.parent.mkdir()
+    path.write_text("value: " + "[" * 600 + "0" + "]" * 600, encoding="utf-8")
+    assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
+
+
 def test_doctor_rejects_declaration_and_directory_symlinks(tmp_path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -247,4 +256,6 @@ def test_doctor_reports_corrupt_schema_and_reference(tmp_path, monkeypatch) -> N
 
 
 def test_doctor_preserves_non_derived_repository_compatibility(tmp_path) -> None:
+    assert doctor(tmp_path) == []
+    (tmp_path / ".ai-native").write_text("legacy marker", encoding="utf-8")
     assert doctor(tmp_path) == []
