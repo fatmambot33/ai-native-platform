@@ -6,14 +6,24 @@ import argparse
 from pathlib import Path
 
 import ai_native
+from ai_native_platform.inheritance import Finding as InheritanceFinding
 from ai_native_platform.inheritance import doctor as inheritance_doctor
+
+
+def _inheritance_findings(args: argparse.Namespace) -> list[InheritanceFinding]:
+    """Return inheritance findings, including deterministic root-resolution failures."""
+    root = Path(args.root) if args.root else Path(args.manifest).parent
+    try:
+        resolved_root = root.resolve()
+    except (OSError, RuntimeError) as exc:
+        return [InheritanceFinding("inheritance.invalid", f"cannot resolve repository root: {exc}")]
+    return inheritance_doctor(resolved_root)
 
 
 def command_doctor(args: argparse.Namespace) -> int:
     """Run the base doctor plus inheritance validation for the target repository."""
     status = ai_native.command_doctor(args)
-    root = Path(args.root) if args.root else Path(args.manifest).parent
-    findings = inheritance_doctor(root.resolve())
+    findings = _inheritance_findings(args)
     if findings:
         detail = "; ".join(f"{finding.code}: {finding.message}" for finding in findings)
         print(f"FAIL Repository inheritance: {detail}")
