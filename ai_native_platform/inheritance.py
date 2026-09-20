@@ -49,6 +49,12 @@ class InheritanceError(ValueError):
     """Raised when a derived-repository declaration is unsafe or inconsistent."""
 
 
+class _LoadedDeclaration(dict[str, Any]):
+    """Declaration mapping retaining its source path for canonical validation."""
+
+    source_path: Path
+
+
 class _UniqueKeyLoader(yaml.SafeLoader):
     """Safe YAML loader that rejects duplicate mapping keys."""
 
@@ -111,7 +117,77 @@ def load_declaration(path: Path) -> dict[str, Any]:
     data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     if not isinstance(data, dict):
         raise InheritanceError("derived declaration must contain a mapping")
-    return data
+    loaded = _LoadedDeclaration(data)
+    loaded.source_path = path
+    return loaded
+
+
+def _iter_schema_references(value: object):
+    """Yield every JSON Schema reference in deterministic document order."""
+    if isinstance(value, dict):
+        reference = value.get("$ref")
+        if reference is not None:
+            if not isinstance(reference, str):
+                raise InheritanceError("schema $ref values must be strings")
+            yield reference
+        for child in value.values():
+            yield from _iter_schema_references(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_schema_references(child)
+
+
+def _validate_schema_references(schema: Mapping[str, Any]) -> None:
+    """Resolve schema references with the same resolver used at runtime."""
+    validator = Draft202012Validator(schema)
+    for reference in _iter_schema_references(schema):
+        if not reference.startswith("#"):
+            raise InheritanceError(f"schema reference must be local: {reference!r}")
+        validator._resolver.lookup(reference)  # noqa: SLF001
+
+
+def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
+    """Ensure the canonical derived schema still rejects key invalid declarations."""
+    validator = Draft202012Validator(schema)
+    invalid_declarations = (
+        {},
+        {"version": 1, "platform": {}, "capabilities": {}},
+        {
+            "version": 2,
+            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "capabilities": {name: "inherit" for name in CAPABILITIES},
+        },
+        {
+            "version": 1,
+            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "capabilities": {**{name: "inherit" for name in CAPABILITIES}, "extra": "inherit"},
+        },
+        {
+            "version": 1,
+            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "capabilities": {**{name: "inherit" for name in CAPABILITIES}, "welcome": "magic"},
+        },
+        {
+            "version": 1,
+            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "capabilities": {name: "inherit" for name in CAPABILITIES},
+            "unexpected": True,
+        },
+    )
+    for candidate in invalid_declarations:
+        if not list(validator.iter_errors(candidate)):
+            raise InheritanceError("derived schema does not enforce the v1 fail-closed contract")
+
+
+def _canonical_schema_for(data: Mapping[str, Any]) -> Path | None:
+    """Return a checkout-local schema for a loaded canonical starter."""
+    if not isinstance(data, _LoadedDeclaration):
+        return None
+    source = data.source_path
+    if source.name != "derived.yaml" or source.parent.name != "templates":
+        return None
+    candidate = source.parent.parent / "schemas" / SCHEMA_NAME
+    return candidate
 
 
 def _schema_errors(data: Mapping[str, Any], schema_path: Path | None = None) -> list[str]:
@@ -119,6 +195,9 @@ def _schema_errors(data: Mapping[str, Any], schema_path: Path | None = None) -> 
     path = _schema_path() if schema_path is None else schema_path
     schema = json.loads(path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
+    _validate_schema_references(schema)
+    if path.name == SCHEMA_NAME:
+        _validate_schema_contract(schema)
     validator = Draft202012Validator(schema)
     return [
         f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: {error.message}"
@@ -198,7 +277,8 @@ def validate_declaration(
         supplies the schema from the checkout being inspected; runtime callers
         use the packaged schema when this is omitted.
     """
-    errors = _schema_errors(data, schema_path)
+    effective_schema = schema_path or _canonical_schema_for(data)
+    errors = _schema_errors(data, effective_schema)
     if errors:
         raise InheritanceError("; ".join(errors))
 
