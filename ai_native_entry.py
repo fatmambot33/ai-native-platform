@@ -10,28 +10,44 @@ from ai_native_platform.inheritance import DoctorFinding
 from ai_native_platform.inheritance import doctor as inheritance_doctor
 
 
-def _inheritance_findings(args: argparse.Namespace) -> list[DoctorFinding]:
-    """Return inheritance findings, including deterministic root-resolution failures."""
+def _resolve_root(args: argparse.Namespace) -> tuple[Path | None, DoctorFinding | None]:
+    """Resolve the target repository root without allowing path errors to escape."""
     root = Path(args.root) if args.root else Path(args.manifest).parent
     try:
-        resolved_root = root.resolve()
+        return root.resolve(), None
     except (OSError, RuntimeError) as exc:
-        return [
-            DoctorFinding(
-                "inheritance.invalid",
-                f"cannot resolve repository root: {exc}",
-                str(root),
-            )
-        ]
+        return None, DoctorFinding(
+            "inheritance.invalid",
+            f"cannot resolve repository root: {exc}",
+            str(root),
+        )
+
+
+def _inheritance_findings(args: argparse.Namespace) -> list[DoctorFinding]:
+    """Return inheritance findings, including deterministic root-resolution failures."""
+    resolved_root, finding = _resolve_root(args)
+    if finding is not None:
+        return [finding]
+    assert resolved_root is not None
     return inheritance_doctor(resolved_root)
 
 
 def command_doctor(args: argparse.Namespace) -> int:
     """Run the base doctor plus inheritance validation for the target repository."""
+    resolved_root, finding = _resolve_root(args)
+    if finding is not None:
+        print(f"FAIL Repository inheritance: {finding.code}: {finding.message}")
+        return 1
+    assert resolved_root is not None
+
+    # Resolve before the base doctor so its own path handling cannot escape on
+    # symlink loops or other resolution failures. Preserve the CLI contract by
+    # passing the canonical root through the same argparse namespace.
+    args.root = str(resolved_root)
     status = ai_native.command_doctor(args)
-    findings = _inheritance_findings(args)
+    findings = inheritance_doctor(resolved_root)
     if findings:
-        detail = "; ".join(f"{finding.code}: {finding.message}" for finding in findings)
+        detail = "; ".join(f"{item.code}: {item.message}" for item in findings)
         print(f"FAIL Repository inheritance: {detail}")
         return 1
     print("PASS Repository inheritance: compliant or not opted in")
