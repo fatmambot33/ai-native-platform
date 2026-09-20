@@ -14,6 +14,7 @@ import tomli as tomllib
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from referencing.exceptions import Unresolvable
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -29,6 +30,11 @@ from ai_native import (  # noqa: E402, I001
     load_mapping,
     load_schema,
     validate_manifest,
+)
+from ai_native_platform.inheritance import (  # noqa: E402
+    InheritanceError,
+    load_declaration,
+    validate_declaration,
 )
 
 ISSUE_FORM = ROOT / ".github/ISSUE_TEMPLATE/ai-improvement.yml"
@@ -265,6 +271,25 @@ def _append_schema_finding(root: Path, relative: str, findings: list[Finding]) -
         findings.append(Finding("standard.schema_invalid", str(exc), relative))
 
 
+def _append_derived_starter_finding(root: Path, findings: list[Finding]) -> None:
+    """Parse and validate the canonical derived-repository starter."""
+    relative = "templates/derived.yaml"
+    try:
+        declaration = load_declaration(root / relative)
+        validate_declaration(declaration)
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        SchemaError,
+        Unresolvable,
+        yaml.YAMLError,
+        InheritanceError,
+        RecursionError,
+    ) as exc:
+        findings.append(Finding("standard.derived_template_invalid", str(exc), relative))
+
+
 def _append_contract_findings(root: Path, standard: dict, findings: list[Finding]) -> None:
     """Validate profiles, schemas, template, and fixtures."""
     profiles = standard.get("profiles", {})
@@ -294,6 +319,7 @@ def _append_contract_findings(root: Path, standard: dict, findings: list[Finding
             )
         )
     _append_schema_finding(root, "schemas/ai-native-derived.schema.json", findings)
+    _append_derived_starter_finding(root, findings)
 
     template = load_mapping(root / "templates/AI_NATIVE_PLATFORM.yaml")
     for finding in contract_findings(template):
