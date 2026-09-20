@@ -8,6 +8,7 @@ import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from urllib.parse import unquote
 
 import tomli as tomllib
 import yaml
@@ -52,6 +53,7 @@ REQUIRED_FILES = (
     "validator/validate.py",
     "validator/validate_standard.py",
     "templates/AI_NATIVE_PLATFORM.yaml",
+    "templates/derived.yaml",
     "templates/validate.yml",
     "templates/AGENTS.md",
     "consumers/registry.yaml",
@@ -216,11 +218,49 @@ def _append_identity_findings(root: Path, findings: list[Finding]) -> dict:
     return standard
 
 
+def _resolve_local_reference(schema: object, reference: str) -> None:
+    """Resolve one local JSON Pointer reference or raise ``ValueError``."""
+    if reference == "#":
+        return
+    if not reference.startswith("#/"):
+        raise ValueError(f"Schema reference must be local: {reference!r}")
+
+    target = schema
+    for raw_token in reference[2:].split("/"):
+        token = unquote(raw_token).replace("~1", "/").replace("~0", "~")
+        if isinstance(target, dict) and token in target:
+            target = target[token]
+            continue
+        if isinstance(target, list) and token.isdecimal():
+            index = int(token)
+            if index < len(target):
+                target = target[index]
+                continue
+        raise ValueError(f"Unresolved local schema reference: {reference!r}")
+
+
+def _validate_local_references(schema: object, root: object | None = None) -> None:
+    """Recursively verify that every schema ``$ref`` resolves locally."""
+    root = schema if root is None else root
+    if isinstance(schema, dict):
+        reference = schema.get("$ref")
+        if reference is not None:
+            if not isinstance(reference, str):
+                raise ValueError("Schema $ref values must be strings")
+            _resolve_local_reference(root, reference)
+        for value in schema.values():
+            _validate_local_references(value, root)
+    elif isinstance(schema, list):
+        for value in schema:
+            _validate_local_references(value, root)
+
+
 def _append_schema_finding(root: Path, relative: str, findings: list[Finding]) -> None:
-    """Parse and meta-validate one canonical JSON Schema artifact."""
+    """Parse, meta-validate, and resolve local references in one schema."""
     try:
         schema = json.loads((root / relative).read_text(encoding="utf-8"))
         Draft202012Validator.check_schema(schema)
+        _validate_local_references(schema)
     except (OSError, ValueError, json.JSONDecodeError, SchemaError) as exc:
         findings.append(Finding("standard.schema_invalid", str(exc), relative))
 
@@ -428,6 +468,7 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         "ai_native_platform/inheritance.py",
         "validator/validate_standard.py",
         "templates/AI_NATIVE_PLATFORM.yaml",
+        "templates/derived.yaml",
         "consumers/registry.yaml",
         "docs/GOVERNANCE.md",
         "docs/AI_REVIEW_GOVERNANCE.md",
