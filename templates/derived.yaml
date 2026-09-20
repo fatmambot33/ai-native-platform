@@ -1,0 +1,12 @@
+version: 1
+platform:
+  repository: fatmambot33/ai-native-platform
+  ref: b2793f9fae645df1bda7492da01627396fc5e29f
+profile: library
+capabilities:
+  welcome: inherit
+  troubleshooting: inherit
+  update: inherit
+  doctor: inherit
+ownership:
+  local: []
