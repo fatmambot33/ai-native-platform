@@ -10,7 +10,10 @@ def test_derived_schema_is_parsed_and_meta_validated(tmp_path) -> None:
     relative = "schemas/ai-native-derived.schema.json"
     schema_path = tmp_path / relative
     schema_path.parent.mkdir(parents=True)
-    schema_path.write_text('{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": 42}\n', encoding="utf-8")
+    schema_path.write_text(
+        '{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": 42}\n',
+        encoding="utf-8",
+    )
 
     findings = []
     _append_schema_finding(tmp_path, relative, findings)
