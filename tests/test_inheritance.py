@@ -97,6 +97,9 @@ def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
         "CON",
         "CONIN$",
         "conout$.txt",
+        "CON .txt",
+        "COM1 .log",
+        "aux .md",
         "COM¹",
         "lpt².log",
         "dir/aux.txt",
@@ -120,6 +123,24 @@ def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
         candidate["ownership"] = {"managed": [managed], "local": [local]}
         with pytest.raises(InheritanceError, match="ambiguous ownership"):
             validate_declaration(candidate)
+
+
+def test_validate_declaration_uses_explicit_schema_path(tmp_path) -> None:
+    """Canonical callers can validate against the schema from their own root."""
+    schema_path = tmp_path / "derived.schema.json"
+    schema_path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "required": ["canonical_only"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InheritanceError, match="canonical_only"):
+        validate_declaration(declaration(), schema_path=schema_path)
 
 
 def test_large_ownership_manifest_validates() -> None:
