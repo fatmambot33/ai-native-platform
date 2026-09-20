@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_native import Finding
 from validator.validate_standard import _append_derived_starter_finding
 
 VALID_REF = "c230f7398ea936e98e4a0ceecd5b069b9248d50e"
@@ -16,9 +17,9 @@ def _write_starter(root: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _findings(root: Path):
+def _findings(root: Path) -> list[Finding]:
     """Return findings produced for the derived starter at ``root``."""
-    findings = []
+    findings: list[Finding] = []
     _append_derived_starter_finding(root, findings)
     return findings
 
