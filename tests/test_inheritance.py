@@ -3,6 +3,7 @@
 import argparse
 import copy
 import json
+from pathlib import Path
 
 import pytest
 import yaml
@@ -17,6 +18,7 @@ from ai_native_platform.inheritance import (
 )
 
 PLATFORM_REF = "b2793f9fae645df1bda7492da01627396fc5e29f"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def declaration() -> dict:
@@ -140,6 +142,47 @@ def test_validate_declaration_uses_explicit_schema_path(tmp_path) -> None:
     )
 
     with pytest.raises(InheritanceError, match="canonical_only"):
+        validate_declaration(declaration(), schema_path=schema_path)
+
+
+def test_loaded_canonical_starter_uses_sibling_schema(tmp_path) -> None:
+    """A starter loaded from a checkout must use that checkout's schema."""
+    schema = json.loads(
+        (ROOT / "schemas/ai-native-derived.schema.json").read_text(encoding="utf-8")
+    )
+    schema["required"].append("canonical_only")
+    schema_path = tmp_path / "schemas" / "ai-native-derived.schema.json"
+    schema_path.parent.mkdir()
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+    starter = tmp_path / "templates" / "derived.yaml"
+    starter.parent.mkdir()
+    starter.write_text(yaml.safe_dump(declaration()), encoding="utf-8")
+
+    with pytest.raises(InheritanceError, match="canonical_only"):
+        validate_declaration(load_declaration(starter))
+
+
+def test_canonical_schema_rejects_permissive_replacement(tmp_path) -> None:
+    """A syntactically valid schema cannot silently drop the v1 contract."""
+    schema_path = tmp_path / "ai-native-derived.schema.json"
+    schema_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(declaration(), schema_path=schema_path)
+
+
+def test_canonical_schema_resolves_references_with_runtime_semantics(tmp_path) -> None:
+    """Canonical reference checks must use the runtime JSON Schema resolver."""
+    schema = json.loads(
+        (ROOT / "schemas/ai-native-derived.schema.json").read_text(encoding="utf-8")
+    )
+    schema["properties"]["capabilities"]["properties"]["welcome"]["$ref"] = (
+        "#/$defs/mode%2Fmissing"
+    )
+    schema_path = tmp_path / "ai-native-derived.schema.json"
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+
+    with pytest.raises(Exception, match="mode%2Fmissing"):
         validate_declaration(declaration(), schema_path=schema_path)
 
 
