@@ -180,14 +180,14 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
 
 
 def _canonical_schema_for(data: Mapping[str, Any]) -> Path | None:
-    """Return a checkout-local schema for a loaded canonical starter."""
+    """Return an available checkout-local schema for a loaded canonical starter."""
     if not isinstance(data, _LoadedDeclaration):
         return None
     source = data.source_path
     if source.name != "derived.yaml" or source.parent.name != "templates":
         return None
     candidate = source.parent.parent / "schemas" / SCHEMA_NAME
-    return candidate
+    return candidate if candidate.is_file() else None
 
 
 def _schema_errors(data: Mapping[str, Any], schema_path: Path | None = None) -> list[str]:
