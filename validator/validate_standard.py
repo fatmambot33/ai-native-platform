@@ -216,8 +216,17 @@ def _append_identity_findings(root: Path, findings: list[Finding]) -> dict:
     return standard
 
 
+def _append_schema_finding(root: Path, relative: str, findings: list[Finding]) -> None:
+    """Parse and meta-validate one canonical JSON Schema artifact."""
+    try:
+        schema = json.loads((root / relative).read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+    except (OSError, ValueError, json.JSONDecodeError, SchemaError) as exc:
+        findings.append(Finding("standard.schema_invalid", str(exc), relative))
+
+
 def _append_contract_findings(root: Path, standard: dict, findings: list[Finding]) -> None:
-    """Validate profiles, schema, template, and fixtures."""
+    """Validate profiles, schemas, template, and fixtures."""
     profiles = standard.get("profiles", {})
     if not isinstance(profiles, dict):
         findings.append(
@@ -244,6 +253,7 @@ def _append_contract_findings(root: Path, standard: dict, findings: list[Finding
                 "schemas/ai-native-platform.schema.json",
             )
         )
+    _append_schema_finding(root, "schemas/ai-native-derived.schema.json", findings)
 
     template = load_mapping(root / "templates/AI_NATIVE_PLATFORM.yaml")
     for finding in contract_findings(template):
