@@ -42,6 +42,7 @@ _WINDOWS_RESERVED = {
 }
 _WINDOWS_INVALID = frozenset('<>:"|?*')
 _MAX_PORTABLE_COMPONENT_BYTES = 255
+_MAX_PORTABLE_PATH_BYTES = 260
 
 
 class InheritanceError(ValueError):
@@ -138,6 +139,7 @@ def _safe_path(value: str) -> PurePosixPath:
     )
     if (
         not value
+        or len(value.encode("utf-8")) > _MAX_PORTABLE_PATH_BYTES
         or "\0" in value
         or "\\" in value
         or posix_path.is_absolute()
