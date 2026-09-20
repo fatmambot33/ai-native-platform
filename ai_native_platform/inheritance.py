@@ -114,9 +114,10 @@ def load_declaration(path: Path) -> dict[str, Any]:
     return data
 
 
-def _schema_errors(data: Mapping[str, Any]) -> list[str]:
+def _schema_errors(data: Mapping[str, Any], schema_path: Path | None = None) -> list[str]:
     """Return stable JSON Schema validation errors."""
-    schema = json.loads(_schema_path().read_text(encoding="utf-8"))
+    path = _schema_path() if schema_path is None else schema_path
+    schema = json.loads(path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
     return [
@@ -134,7 +135,7 @@ def _safe_path(value: str) -> PurePosixPath:
         or len(part.encode("utf-8")) > _MAX_PORTABLE_COMPONENT_BYTES
         or part.endswith((" ", "."))
         or any(char in _WINDOWS_INVALID or ord(char) < 32 for char in part)
-        or part.split(".", 1)[0].upper() in _WINDOWS_RESERVED
+        or part.split(".", 1)[0].rstrip(" ").upper() in _WINDOWS_RESERVED
         for part in posix_path.parts
     )
     if (
@@ -183,9 +184,21 @@ def _validate_ownership(entries: list[tuple[str, PurePosixPath]]) -> None:
         node["owners"].add(owner)
 
 
-def validate_declaration(data: Mapping[str, Any]) -> None:
-    """Validate schema plus cross-field inheritance invariants."""
-    errors = _schema_errors(data)
+def validate_declaration(
+    data: Mapping[str, Any], *, schema_path: Path | None = None
+) -> None:
+    """Validate schema plus cross-field inheritance invariants.
+
+    Parameters
+    ----------
+    data:
+        Parsed derived-repository declaration.
+    schema_path:
+        Optional schema to validate against. Canonical repository validation
+        supplies the schema from the checkout being inspected; runtime callers
+        use the packaged schema when this is omitted.
+    """
+    errors = _schema_errors(data, schema_path)
     if errors:
         raise InheritanceError("; ".join(errors))
 
