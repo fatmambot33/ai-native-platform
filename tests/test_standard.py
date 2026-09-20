@@ -10,7 +10,12 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from ai_native import load_schema
-from validator.validate_standard import REQUIRED_FILES, ROOT, validate_standard
+from validator.validate_standard import (
+    REQUIRED_FILES,
+    ROOT,
+    _append_schema_finding,
+    validate_standard,
+)
 
 IMMUTABLE_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -23,6 +28,35 @@ def test_schema_is_valid_draft_2020_12() -> None:
     schema = load_schema()
     Draft202012Validator.check_schema(schema)
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+
+def test_derived_schema_rejects_unresolved_local_reference(tmp_path) -> None:
+    """Canonical validation must reject a syntactically valid broken local ref."""
+    relative = "schemas/ai-native-derived.schema.json"
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$defs": {},
+                "$ref": "#/$defs/missing",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    findings = []
+    _append_schema_finding(tmp_path, relative, findings)
+
+    assert len(findings) == 1
+    assert findings[0].code == "standard.schema_invalid"
+    assert findings[0].path == relative
+    assert "Unresolved local schema reference" in findings[0].message
+
+
+def test_derived_starter_is_required_canonical_artifact() -> None:
+    assert "templates/derived.yaml" in REQUIRED_FILES
 
 
 def test_issue_form_uses_yaml_form_keys() -> None:
@@ -133,7 +167,6 @@ def test_release_workflow_is_idempotent_verifiable_and_prerelease() -> None:
         "--verify-tag",
     ):
         assert token in workflow
-
 
 
 def test_branch_freshness_is_scoped_to_ai_review() -> None:
