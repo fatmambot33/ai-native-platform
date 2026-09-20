@@ -6,17 +6,20 @@ All notable changes are documented here.
 
 ### Added
 
+- Add the versioned AI Native inheritance contract for derived repositories, including deterministic `ai-native doctor` validation, provenance-aware capability composition, portable ownership validation, and the `templates/derived.yaml` starter declaration.
 - Add opt-in `evidence.paths.ai_review_workflow` governance evidence with structural validation of trusted current-HEAD Codex review workflows.
 - Add a reusable Codex review gate that binds automated clean-reaction requests to the exact PR HEAD through server-verified GitHub Actions request-run provenance scoped to both head and base revisions.
 
 ### Security
 
+- Require inheritance declarations to fail closed on malformed or ambiguous configuration, unsafe ownership paths, filesystem indirection, and damaged inheritance schemas.
 - Require request jobs to use least-privilege permissions, keep wait jobs read-only, preserve the `codex-review` check name, and reject job-level concurrency/timeouts that can bypass or destabilize the gate.
 - Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities below GitHub's size limit, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation plus registry-controlled executable validation pins.
 - Keep bootstrap evidence fail-closed: collaborator-authored bootstrap markers are not trusted; bootstrap succeeds only through an exact-HEAD native Codex review bound to the active base or trusted bot request evidence bound to the exact HEAD and base revisions.
 
 ### Migration
 
+- Derived repositories adopting inheritance should copy `templates/derived.yaml` to `.ai-native/derived.yaml`, replace `platform.ref` with an immutable release or commit containing the inheritance contract, select a registered profile, declare capability composition explicitly, and run `ai-native doctor` before committing the declaration. Existing repositories without `.ai-native/derived.yaml` retain their current behavior.
 - Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, finish deterministic CI before spending the one-shot Codex review request, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
 
 
@@ -78,20 +81,3 @@ All notable changes are documented here.
 - Deterministic legacy-manifest migration with dry-run and diff.
 - Passing and failing repository fixtures for all six profiles.
 - Immutable registry and continuous conformance checks for three real consumer repositories.
-- Vendored-contract distribution proven in PermutiveAPI, MatplotLibAPI, and openai-sdk-helpers.
-- Bounded evidence-driven self-improvement with redaction, suppression, fingerprinting, and issue budgets.
-- SHA-256 checksums, SPDX SBOM, verified SLSA-compatible provenance, and conditional GitHub-hosted attestations.
-- Idempotent verified-main release workflow that creates the immutable tag and GitHub prerelease.
-
-### Security
-
-- Local-only credential contract and credential fixture.
-- CodeQL v4 analysis with reviewed retained SARIF across the standard and registered consumers.
-- Secret redaction for normalized improvement signals.
-- Private-release provenance verification independent of GitHub's plan-limited attestations API.
-
-### Distribution
-
-- Immutable vendored-contract snapshots are the proven default for public consumers.
-- Private reusable workflows remain available where repository Actions access and a read-only token are configured.
-- Production consumers pin `v0.1.0` or an immutable commit; floating `main` references are prohibited.
