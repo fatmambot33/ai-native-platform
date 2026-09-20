@@ -29,12 +29,7 @@ _SEMVER = rf"{_SEMVER_CORE}{_SEMVER_PRERELEASE}{_SEMVER_BUILD}"
 REF_PATTERN = re.compile(rf"(?:[0-9a-f]{{40}}|v?{_SEMVER})")
 SCHEMA_NAME = "ai-native-derived.schema.json"
 _WINDOWS_RESERVED = {
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    "CONIN$",
-    "CONOUT$",
+    "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
     *(f"COM{i}" for i in range(1, 10)),
     *(f"LPT{i}" for i in range(1, 10)),
     *(f"COM{i}" for i in "¹²³"),
@@ -102,13 +97,20 @@ class DoctorFinding:
 
 
 def _schema_path() -> Path:
-    """Return the inheritance schema from a checkout or installed distribution."""
-    checkout = Path(__file__).resolve().parents[1] / "schemas" / SCHEMA_NAME
+    """Return the inheritance schema from a checkout or active installation scheme."""
+    module_root = Path(__file__).resolve().parents[1]
+    checkout = module_root / "schemas" / SCHEMA_NAME
     if checkout.is_file():
         return checkout
-    installed = Path(sysconfig.get_path("data")) / "share" / "ai-native-platform" / SCHEMA_NAME
-    if installed.is_file():
-        return installed
+
+    candidates = [module_root / "share" / "ai-native-platform" / SCHEMA_NAME]
+    for scheme in (sysconfig.get_default_scheme(), sysconfig.get_preferred_scheme("user")):
+        data_path = sysconfig.get_path("data", scheme=scheme)
+        if data_path:
+            candidates.append(Path(data_path) / "share" / "ai-native-platform" / SCHEMA_NAME)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
     raise FileNotFoundError(f"Unable to locate {SCHEMA_NAME}")
 
 
@@ -149,28 +151,34 @@ def _validate_schema_references(schema: Mapping[str, Any]) -> None:
 def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
     """Ensure the canonical derived schema still rejects key invalid declarations."""
     validator = Draft202012Validator(schema)
+    capabilities = {name: "inherit" for name in CAPABILITIES}
     invalid_declarations = (
         {},
         {"version": 1, "platform": {}, "capabilities": {}},
         {
             "version": 2,
             "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
-            "capabilities": {name: "inherit" for name in CAPABILITIES},
+            "capabilities": capabilities,
+        },
+        {
+            "version": 1,
+            "platform": {"repository": "evil/other", "ref": "v1.0.0"},
+            "capabilities": capabilities,
         },
         {
             "version": 1,
             "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
-            "capabilities": {**{name: "inherit" for name in CAPABILITIES}, "extra": "inherit"},
+            "capabilities": {**capabilities, "extra": "inherit"},
         },
         {
             "version": 1,
             "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
-            "capabilities": {**{name: "inherit" for name in CAPABILITIES}, "welcome": "magic"},
+            "capabilities": {**capabilities, "welcome": "magic"},
         },
         {
             "version": 1,
             "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
-            "capabilities": {name: "inherit" for name in CAPABILITIES},
+            "capabilities": capabilities,
             "unexpected": True,
         },
     )
@@ -371,6 +379,7 @@ def doctor(root: Path) -> list[DoctorFinding]:
     except (
         OSError,
         UnicodeError,
+        ValueError,
         json.JSONDecodeError,
         SchemaError,
         Unresolvable,
