@@ -156,6 +156,11 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
         {},
         {"version": 1, "platform": {}, "capabilities": {}},
         {
+            "version": 1,
+            "platform": {"repository": "fatmambot33/ai-native-platform"},
+            "capabilities": capabilities,
+        },
+        {
             "version": 2,
             "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
             "capabilities": capabilities,
