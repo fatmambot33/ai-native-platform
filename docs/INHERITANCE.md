@@ -12,7 +12,7 @@ A derived repository declares `.ai-native/derived.yaml`:
 version: 1
 platform:
   repository: fatmambot33/ai-native-platform
-  ref: b2793f9fae645df1bda7492da01627396fc5e29f
+  ref: c230f7398ea936e98e4a0ceecd5b069b9248d50e
 profile: library
 capabilities:
   welcome: inherit
@@ -23,7 +23,7 @@ ownership:
   local: []
 ```
 
-The example pins a commit that contains the inheritance contract; consumers should pin an immutable release containing the contract when one is available. `platform.repository` identifies the contract provider. `platform.ref` MUST be an immutable semantic version or 40-character commit SHA. `profile` is optional; when present it names exactly one profile registered by `standard/AI_NATIVE_PLATFORM.yaml`. Unknown contract versions, profiles, capabilities, modes, duplicate YAML keys, or ownership declarations fail closed.
+The example pins a commit that contains the completed inheritance v1 implementation and canonical validation; consumers should pin an immutable release containing the contract when one is available. `platform.repository` identifies the contract provider. `platform.ref` MUST be an immutable semantic version or 40-character commit SHA. `profile` is optional; when present it names exactly one profile registered by `standard/AI_NATIVE_PLATFORM.yaml`. Unknown contract versions, profiles, capabilities, modes, duplicate YAML keys, or ownership declarations fail closed.
 
 ## Resolution order
 
