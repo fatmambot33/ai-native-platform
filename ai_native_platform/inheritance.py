@@ -97,20 +97,24 @@ class DoctorFinding:
 
 
 def _schema_path() -> Path:
-    """Return the inheritance schema from a checkout or active installation scheme."""
-    module_root = Path(__file__).resolve().parents[1]
-    checkout = module_root / "schemas" / SCHEMA_NAME
-    if checkout.is_file():
-        return checkout
-
-    candidates = [module_root / "share" / "ai-native-platform" / SCHEMA_NAME]
-    for scheme in (sysconfig.get_default_scheme(), sysconfig.get_preferred_scheme("user")):
-        data_path = sysconfig.get_path("data", scheme=scheme)
-        if data_path:
-            candidates.append(Path(data_path) / "share" / "ai-native-platform" / SCHEMA_NAME)
+    """Return the inheritance schema from a checkout or installed package."""
+    package_root = Path(__file__).resolve().parent
+    module_root = package_root.parent
+    candidates = (
+        module_root / "schemas" / SCHEMA_NAME,
+        package_root / "schemas" / SCHEMA_NAME,
+        module_root / "share" / "ai-native-platform" / SCHEMA_NAME,
+    )
     for candidate in candidates:
         if candidate.is_file():
             return candidate
+
+    for scheme in (sysconfig.get_default_scheme(), sysconfig.get_preferred_scheme("user")):
+        data_path = sysconfig.get_path("data", scheme=scheme)
+        if data_path:
+            candidate = Path(data_path) / "share" / "ai-native-platform" / SCHEMA_NAME
+            if candidate.is_file():
+                return candidate
     raise FileNotFoundError(f"Unable to locate {SCHEMA_NAME}")
 
 
@@ -149,7 +153,7 @@ def _validate_schema_references(schema: Mapping[str, Any]) -> None:
 
 
 def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
-    """Ensure the canonical derived schema still rejects key invalid declarations."""
+    """Ensure the canonical derived schema preserves the complete v1 contract."""
     validator = Draft202012Validator(schema)
     capabilities = {name: "inherit" for name in CAPABILITIES}
     platform = {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"}
@@ -161,11 +165,7 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "platform": {"repository": "fatmambot33/ai-native-platform"},
             "capabilities": capabilities,
         },
-        {
-            "version": 2,
-            "platform": platform,
-            "capabilities": capabilities,
-        },
+        {"version": 2, "platform": platform, "capabilities": capabilities},
         {
             "version": 1,
             "platform": {"repository": "evil/other", "ref": "v1.0.0"},
@@ -201,6 +201,22 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
     for candidate in invalid_declarations:
         if not list(validator.iter_errors(candidate)):
             raise InheritanceError("derived schema does not enforce the v1 fail-closed contract")
+
+    valid_modes = (
+        ("inherit", {}),
+        ("append", {"extensions": {"welcome": ["welcome-local"]}}),
+        ("override", {"extensions": {"welcome": ["welcome-local"]}}),
+        ("disable", {}),
+    )
+    for mode, extra in valid_modes:
+        candidate = {
+            "version": 1,
+            "platform": platform,
+            "capabilities": {**capabilities, "welcome": mode},
+            **extra,
+        }
+        if list(validator.iter_errors(candidate)):
+            raise InheritanceError("derived schema does not preserve all v1 composition modes")
 
 
 def _canonical_schema_for(data: Mapping[str, Any]) -> Path | None:
