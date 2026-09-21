@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from ai_native_platform.inheritance import CAPABILITIES, InheritanceError, validate_declaration
+from ai_native_platform.inheritance import (
+    CAPABILITIES,
+    InheritanceError,
+    validate_declaration,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
