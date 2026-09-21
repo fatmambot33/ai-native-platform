@@ -157,8 +157,10 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
     validator = Draft202012Validator(schema)
     capabilities = {name: "inherit" for name in CAPABILITIES}
     platform = {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"}
+    complete = {"version": 1, "platform": platform, "capabilities": capabilities}
     invalid_declarations = (
         {},
+        *( {key: value for key, value in complete.items() if key != missing} for missing in complete ),
         {"version": 1, "platform": {}, "capabilities": {}},
         {
             "version": 1,
@@ -217,6 +219,14 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
         }
         if list(validator.iter_errors(candidate)):
             raise InheritanceError("derived schema does not preserve all v1 composition modes")
+
+    for owner in ("inherited", "managed", "merged", "local"):
+        candidate = {
+            **complete,
+            "ownership": {owner: [f"contract/{owner}.txt"]},
+        }
+        if list(validator.iter_errors(candidate)):
+            raise InheritanceError("derived schema does not preserve all v1 ownership classes")
 
 
 def _canonical_schema_for(data: Mapping[str, Any]) -> Path | None:
