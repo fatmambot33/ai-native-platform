@@ -150,7 +150,7 @@ def test_loaded_canonical_starter_uses_sibling_schema(tmp_path) -> None:
     schema = json.loads(
         (ROOT / "schemas/ai-native-derived.schema.json").read_text(encoding="utf-8")
     )
-    schema["required"].append("canonical_only")
+    schema["properties"]["platform"]["properties"]["ref"]["pattern"] = "^v"
     schema_path = tmp_path / "schemas" / "ai-native-derived.schema.json"
     schema_path.parent.mkdir()
     schema_path.write_text(json.dumps(schema), encoding="utf-8")
@@ -158,7 +158,7 @@ def test_loaded_canonical_starter_uses_sibling_schema(tmp_path) -> None:
     starter.parent.mkdir()
     starter.write_text(yaml.safe_dump(declaration()), encoding="utf-8")
 
-    with pytest.raises(InheritanceError, match="canonical_only"):
+    with pytest.raises(InheritanceError, match="does not match"):
         validate_declaration(load_declaration(starter))
 
 
