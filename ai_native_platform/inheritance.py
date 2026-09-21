@@ -152,6 +152,7 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
     """Ensure the canonical derived schema still rejects key invalid declarations."""
     validator = Draft202012Validator(schema)
     capabilities = {name: "inherit" for name in CAPABILITIES}
+    platform = {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"}
     invalid_declarations = (
         {},
         {"version": 1, "platform": {}, "capabilities": {}},
@@ -162,7 +163,7 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
         },
         {
             "version": 2,
-            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "platform": platform,
             "capabilities": capabilities,
         },
         {
@@ -170,19 +171,29 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "platform": {"repository": "evil/other", "ref": "v1.0.0"},
             "capabilities": capabilities,
         },
+        *(
+            {
+                "version": 1,
+                "platform": platform,
+                "capabilities": {
+                    name: mode for name, mode in capabilities.items() if name != missing
+                },
+            }
+            for missing in CAPABILITIES
+        ),
         {
             "version": 1,
-            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "platform": platform,
             "capabilities": {**capabilities, "extra": "inherit"},
         },
         {
             "version": 1,
-            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "platform": platform,
             "capabilities": {**capabilities, "welcome": "magic"},
         },
         {
             "version": 1,
-            "platform": {"repository": "fatmambot33/ai-native-platform", "ref": "v1.0.0"},
+            "platform": platform,
             "capabilities": capabilities,
             "unexpected": True,
         },
