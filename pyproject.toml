@@ -39,6 +39,9 @@ ai-native = "ai_native_entry:main"
 py-modules = ["ai_native", "ai_native_entry"]
 packages = ["ai_native_platform"]
 
+[tool.setuptools.package-data]
+ai_native_platform = ["schemas/*.json"]
+
 [tool.setuptools.data-files]
 "share/ai-native-platform" = [
   "schemas/ai-native-platform.schema.json",
