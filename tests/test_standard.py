@@ -13,6 +13,7 @@ from ai_native import load_schema
 from validator.validate_standard import (
     REQUIRED_FILES,
     ROOT,
+    _append_packaged_schema_finding,
     _append_schema_finding,
     validate_standard,
 )
@@ -55,6 +56,43 @@ def test_derived_schema_rejects_unresolved_local_reference(tmp_path) -> None:
     assert "Unresolved local schema reference" in findings[0].message
 
 
+def test_packaged_derived_schema_is_required_canonical_artifact() -> None:
+    assert "ai_native_platform/schemas/ai-native-derived.schema.json" in REQUIRED_FILES
+
+
+def test_packaged_derived_schema_must_match_canonical_schema(tmp_path) -> None:
+    """Canonical validation must reject drift in the schema shipped by the wheel."""
+    canonical = tmp_path / "schemas/ai-native-derived.schema.json"
+    packaged = tmp_path / "ai_native_platform/schemas/ai-native-derived.schema.json"
+    canonical.parent.mkdir(parents=True)
+    packaged.parent.mkdir(parents=True)
+    canonical.write_text('{"type": "object"}\n', encoding="utf-8")
+    packaged.write_text('{}\n', encoding="utf-8")
+
+    findings = []
+    _append_packaged_schema_finding(tmp_path, findings)
+
+    assert len(findings) == 1
+    assert findings[0].code == "standard.schema_copy_drift"
+    assert findings[0].path == "ai_native_platform/schemas/ai-native-derived.schema.json"
+
+
+def test_packaged_derived_schema_accepts_exact_copy(tmp_path) -> None:
+    """Canonical validation must accept an exact packaged schema copy."""
+    canonical = tmp_path / "schemas/ai-native-derived.schema.json"
+    packaged = tmp_path / "ai_native_platform/schemas/ai-native-derived.schema.json"
+    canonical.parent.mkdir(parents=True)
+    packaged.parent.mkdir(parents=True)
+    content = '{"type": "object"}\n'
+    canonical.write_text(content, encoding="utf-8")
+    packaged.write_text(content, encoding="utf-8")
+
+    findings = []
+    _append_packaged_schema_finding(tmp_path, findings)
+
+    assert findings == []
+
+
 def test_derived_starter_is_required_canonical_artifact() -> None:
     assert "templates/derived.yaml" in REQUIRED_FILES
 
@@ -84,11 +122,13 @@ def test_public_license_is_apache_2_0() -> None:
 
 def test_codeql_uploads_when_public_and_retains_private_fallback() -> None:
     workflow = (ROOT / ".github/workflows/codeql.yml").read_text(encoding="utf-8")
-
-    assert "security-events: write" in workflow
-    assert "github.event.repository.private" in workflow
-    assert "'never' || 'always'" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    for token in (
+        "security-events: write",
+        "github.event.repository.private",
+        "'never' || 'always'",
+        "actions/upload-artifact@v4",
+    ):
+        assert token in workflow
 
 
 def test_reusable_codex_gate_implementation_is_required() -> None:
