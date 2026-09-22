@@ -53,6 +53,7 @@ REQUIRED_FILES = (
     "ai_native_entry.py",
     "ai_native_platform/__init__.py",
     "ai_native_platform/inheritance.py",
+    "ai_native_platform/schemas/ai-native-derived.schema.json",
     "standard/AI_NATIVE_PLATFORM.yaml",
     "schemas/ai-native-platform.schema.json",
     "schemas/ai-native-derived.schema.json",
@@ -271,6 +272,26 @@ def _append_schema_finding(root: Path, relative: str, findings: list[Finding]) -
         findings.append(Finding("standard.schema_invalid", str(exc), relative))
 
 
+def _append_packaged_schema_finding(root: Path, findings: list[Finding]) -> None:
+    """Require the packaged inheritance schema to match the canonical schema exactly."""
+    canonical_relative = "schemas/ai-native-derived.schema.json"
+    packaged_relative = "ai_native_platform/schemas/ai-native-derived.schema.json"
+    try:
+        canonical = (root / canonical_relative).read_bytes()
+        packaged = (root / packaged_relative).read_bytes()
+    except OSError as exc:
+        findings.append(Finding("standard.schema_copy_invalid", str(exc), packaged_relative))
+        return
+    if packaged != canonical:
+        findings.append(
+            Finding(
+                "standard.schema_copy_drift",
+                "Packaged inheritance schema must be byte-for-byte identical to the canonical schema.",
+                packaged_relative,
+            )
+        )
+
+
 def _append_derived_starter_finding(root: Path, findings: list[Finding]) -> None:
     """Parse and validate the canonical derived-repository starter."""
     relative = "templates/derived.yaml"
@@ -319,6 +340,7 @@ def _append_contract_findings(root: Path, standard: dict, findings: list[Finding
             )
         )
     _append_schema_finding(root, "schemas/ai-native-derived.schema.json", findings)
+    _append_packaged_schema_finding(root, findings)
     _append_derived_starter_finding(root, findings)
 
     template = load_mapping(root / "templates/AI_NATIVE_PLATFORM.yaml")
