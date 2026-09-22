@@ -160,7 +160,10 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
     complete = {"version": 1, "platform": platform, "capabilities": capabilities}
     invalid_declarations = (
         {},
-        *( {key: value for key, value in complete.items() if key != missing} for missing in complete ),
+        *(
+            {key: value for key, value in complete.items() if key != missing}
+            for missing in complete
+        ),
         {"version": 1, "platform": {}, "capabilities": {}},
         {
             "version": 1,
