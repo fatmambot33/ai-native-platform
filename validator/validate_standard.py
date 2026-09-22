@@ -286,10 +286,7 @@ def _append_packaged_schema_finding(root: Path, findings: list[Finding]) -> None
         findings.append(
             Finding(
                 "standard.schema_copy_drift",
-                (
-                    "Packaged inheritance schema must be byte-for-byte identical "
-                    "to the canonical schema."
-                ),
+                "Packaged inheritance schema must be byte-for-byte identical to the canonical schema.",
                 packaged_relative,
             )
         )
@@ -461,155 +458,164 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
             findings.append(Finding(code, message, "ai_native.py"))
 
     readme = (root / "README.md").read_text(encoding="utf-8")
-    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    release_notes = (root / "RELEASE_NOTES.md").read_text(encoding="utf-8")
-    governance = (root / "docs/GOVERNANCE.md").read_text(encoding="utf-8")
-    ai_review_governance = (root / "docs/AI_REVIEW_GOVERNANCE.md").read_text(encoding="utf-8")
-    inheritance = (root / "docs/INHERITANCE.md").read_text(encoding="utf-8")
-    distribution = (root / "docs/DISTRIBUTION.md").read_text(encoding="utf-8")
-    release = (root / "docs/RELEASE.md").read_text(encoding="utf-8")
-    contributing = (root / "CONTRIBUTING.md").read_text(encoding="utf-8")
-    security = (root / "SECURITY.md").read_text(encoding="utf-8")
-    agents = (root / "AGENTS.md").read_text(encoding="utf-8")
-    codeowners = (root / ".github/CODEOWNERS").read_text(encoding="utf-8")
-    pull_request_template = (root / ".github/PULL_REQUEST_TEMPLATE.md").read_text(
-        encoding="utf-8"
+    if re.search(r"uses:\s+[^\s]+@main(?:\s|$)", readme):
+        findings.append(
+            Finding(
+                "standard.floating_reference",
+                "Production documentation must not recommend @main.",
+                "README.md",
+            )
+        )
+
+    workflow_path = ".github/workflows/codex-review.yml"
+    for item in _single_ai_review_workflow_findings(workflow_path, root):
+        findings.append(
+            Finding(
+                "standard.ai_review_workflow_incomplete",
+                item.message,
+                workflow_path,
+            )
+        )
+
+    codex_review = (root / workflow_path).read_text(encoding="utf-8")
+    action_refs = re.findall(
+        r"uses:\s*fatmambot33/ai-native-platform/actions/codex-review-gate@([0-9a-f]{40})",
+        codex_review,
     )
-
-    required_tokens = (
-        (readme, "AI Native Platform", "README.md"),
-        (changelog, "## [Unreleased]", "CHANGELOG.md"),
-        (release_notes, "# Release notes", "RELEASE_NOTES.md"),
-        (governance, "Autonomy", "docs/GOVERNANCE.md"),
-        (ai_review_governance, "Codex", "docs/AI_REVIEW_GOVERNANCE.md"),
-        (inheritance, "Derived", "docs/INHERITANCE.md"),
-        (distribution, "PyPI", "docs/DISTRIBUTION.md"),
-        (release, "Release", "docs/RELEASE.md"),
-        (contributing, "pull request", "CONTRIBUTING.md"),
-        (security, "Security", "SECURITY.md"),
-        (agents, "Agent Instructions", "AGENTS.md"),
-        (codeowners, "@fatmambot33", ".github/CODEOWNERS"),
-        (pull_request_template, "Codex", ".github/PULL_REQUEST_TEMPLATE.md"),
-    )
-    for content, token, path in required_tokens:
-        if token not in content:
-            findings.append(Finding("standard.documentation_missing", token, path))
-
-    if "ai_native_platform/**" not in codeowners:
+    if not action_refs:
         findings.append(
             Finding(
-                "standard.codeowners_inheritance_missing",
-                "Packaged inheritance runtime must have an explicit CODEOWNERS rule.",
-                ".github/CODEOWNERS",
+                "standard.ai_review_action_unpinned",
+                "AI review workflow must pin the canonical action to an immutable commit SHA.",
+                workflow_path,
             )
         )
-    if "docs/INHERITANCE.md" not in codeowners:
+    elif any(reference not in TRUSTED_AI_REVIEW_GATE_REFS for reference in action_refs):
         findings.append(
             Finding(
-                "standard.codeowners_inheritance_docs_missing",
-                "Inheritance contract documentation must have an explicit CODEOWNERS rule.",
-                ".github/CODEOWNERS",
+                "standard.ai_review_action_untrusted",
+                "AI review workflow must use a trusted canonical gate revision.",
+                workflow_path,
             )
         )
 
-    workflow = (root / ".github/workflows/validate.yml").read_text(encoding="utf-8")
-    if "python validator/validate_standard.py" not in workflow:
-        findings.append(
-            Finding(
-                "standard.canonical_validator_not_enforced",
-                "Validation workflow must execute canonical repository validation.",
-                ".github/workflows/validate.yml",
-            )
-        )
-
-    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    scripts = pyproject.get("project", {}).get("scripts", {})
-    if scripts.get("ai-native") != "ai_native_entry:main":
-        findings.append(
-            Finding(
-                "standard.cli_entrypoint_invalid",
-                "ai-native must use the inheritance-aware installed entry point.",
-                "pyproject.toml",
-            )
-        )
-
-    gate_ref = pyproject.get("tool", {}).get("ai-native", {}).get("codex_gate_ref", "")
-    if gate_ref not in TRUSTED_AI_REVIEW_GATE_REFS:
-        findings.append(
-            Finding(
-                "standard.codex_gate_ref_invalid",
-                "Package metadata must pin a trusted immutable Codex review gate revision.",
-                "pyproject.toml",
-            )
-        )
-
-    for relative in (
+    governed_paths = (
+        ".github/workflows/codex-review.yml",
+        ".github/CODEOWNERS",
+        ".github/dependabot.yml",
         "actions/codex-review-gate/action.yml",
         "actions/codex-review-gate/codex-review-gate.sh",
+        "actions/codex-review-gate/preflight.sh",
+        ".github/workflows/__ai_native_required_check_probe__.yml",
+        "schemas/ai-native-platform.schema.json",
+        "schemas/ai-native-derived.schema.json",
+        "standard/AI_NATIVE_PLATFORM.yaml",
+        "ai_native.py",
+        "ai_native_entry.py",
+        "ai_native_platform/__init__.py",
+        "ai_native_platform/inheritance.py",
+        "validator/validate_standard.py",
+        "templates/AI_NATIVE_PLATFORM.yaml",
+        "templates/derived.yaml",
+        "consumers/registry.yaml",
+        "docs/GOVERNANCE.md",
+        "docs/AI_REVIEW_GOVERNANCE.md",
+        "docs/INHERITANCE.md",
+        "docs/SECURITY_EVIDENCE.md",
+        "docs/DISTRIBUTION.md",
+        "docs/RELEASE.md",
+        "AGENTS.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "RELEASE_NOTES.md",
+        "pyproject.toml",
+        "tools/release_artifacts.py",
+    )
+    for relative in governed_paths:
+        owners = _codeowners_effective_owners(root, Path(relative))
+        if not owners or "@fatmambot33" not in owners:
+            findings.append(
+                Finding(
+                    "standard.ai_review_codeowners_incomplete",
+                    f"Governance CODEOWNERS must actively protect {relative!r} "
+                    "with @fatmambot33.",
+                    ".github/CODEOWNERS",
+                )
+            )
+
+    release_workflow = (root / ".github/workflows/release.yml").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "actions/attest-build-provenance@v3",
+        "python tools/release_artifacts.py dist",
+        "gh release create",
+        "--verify-tag",
     ):
-        owners = _codeowners_effective_owners(codeowners, relative)
-        if "@fatmambot33" not in owners:
+        if token not in release_workflow:
             findings.append(
                 Finding(
-                    "standard.codex_gate_owner_invalid",
-                    "Codex review gate implementation must be code-owner protected.",
-                    relative,
+                    "standard.release_workflow_incomplete",
+                    f"Release workflow must include {token!r}.",
+                    ".github/workflows/release.yml",
                 )
             )
 
-    registry = load_mapping(root / "consumers/registry.yaml")
-    consumers = registry.get("consumers", [])
-    if not isinstance(consumers, list):
-        findings.append(
-            Finding(
-                "standard.consumer_registry_invalid",
-                "Consumer registry must contain a list of consumers.",
-                "consumers/registry.yaml",
-            )
-        )
-        consumers = []
-    for index, consumer in enumerate(consumers):
-        if not isinstance(consumer, dict):
+    self_improve = (root / ".github/workflows/self-improve.yml").read_text(
+        encoding="utf-8"
+    )
+    for token in ("fingerprint", "AI_NATIVE_ISSUE_BUDGET", "issues: write"):
+        if token not in self_improve:
             findings.append(
                 Finding(
-                    "standard.consumer_entry_invalid",
-                    "Consumer entries must be mappings.",
-                    f"consumers[{index}]",
-                )
-            )
-            continue
-        if not consumer.get("repository") or not consumer.get("manifest"):
-            findings.append(
-                Finding(
-                    "standard.consumer_entry_incomplete",
-                    "Consumer entries require repository and manifest.",
-                    f"consumers[{index}]",
+                    "standard.self_improvement_incomplete",
+                    f"Self-improvement workflow must include {token!r}.",
+                    ".github/workflows/self-improve.yml",
                 )
             )
 
 
-def validate_repository(root: Path) -> list[Finding]:
-    """Return all canonical repository findings."""
+def validate_standard(root: Path = ROOT) -> list[Finding]:
+    """Return canonical standard validation findings."""
     findings: list[Finding] = []
     _append_required_file_findings(root, findings)
+    if findings:
+        return _deduplicate(findings)
+
     standard = _append_identity_findings(root, findings)
     _append_contract_findings(root, standard, findings)
     _append_repository_findings(root, findings)
-    return findings
+    return _deduplicate(findings)
+
+
+def _deduplicate(findings: list[Finding]) -> list[Finding]:
+    """Return stable unique findings."""
+    unique: dict[tuple[str, str, str | None, str], Finding] = {}
+    for finding in findings:
+        unique[(finding.code, finding.message, finding.path, finding.level)] = finding
+    return list(unique.values())
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run canonical repository validation."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT)
+    """Run canonical self-validation."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    findings = validate_repository(args.root.resolve())
-    if findings:
+
+    try:
+        findings = validate_standard()
+    except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError, SchemaError) as exc:
+        findings = [Finding("standard.validator_error", str(exc))]
+
+    if args.json:
+        print(json.dumps([asdict(item) for item in findings], indent=2, sort_keys=True))
+    elif findings:
+        print("Canonical AI-native standard validation failed:")
         for finding in findings:
-            print(finding.render())
-        return 1
-    print("PASS canonical AI-native platform repository")
-    return 0
+            print(f"- {finding.render()}")
+    else:
+        print("Canonical AI-native standard validation passed.")
+    return 1 if findings else 0
 
 
 if __name__ == "__main__":
