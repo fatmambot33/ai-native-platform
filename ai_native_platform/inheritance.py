@@ -202,6 +202,9 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "capabilities": capabilities,
             "unexpected": True,
         },
+        {**complete, "capabilities": {**capabilities, "welcome": "append"}, "extensions": {"welcome": 123}},
+        {**complete, "capabilities": {**capabilities, "welcome": "append"}, "extensions": {"welcome": [123]}},
+        {**complete, "capabilities": {**capabilities, "welcome": "append"}, "extensions": {"welcome": [""]}},
     )
     for candidate in invalid_declarations:
         if not list(validator.iter_errors(candidate)):
@@ -392,11 +395,14 @@ def _require_regular_declaration(root: Path, declaration_path: Path) -> bool:
     """Check for a repository-owned declaration without following symlinks."""
     ai_native = root / ".ai-native"
     directory_stat = ai_native.lstat()
+    if not stat.S_ISDIR(directory_stat.st_mode) and not stat.S_ISLNK(directory_stat.st_mode):
+        return False
+    try:
+        declaration_stat = declaration_path.lstat()
+    except FileNotFoundError:
+        return False
     if stat.S_ISLNK(directory_stat.st_mode):
         raise InheritanceError(".ai-native must not be a symlink")
-    if not stat.S_ISDIR(directory_stat.st_mode):
-        return False
-    declaration_stat = declaration_path.lstat()
     if stat.S_ISLNK(declaration_stat.st_mode) or not stat.S_ISREG(declaration_stat.st_mode):
         raise InheritanceError("derived declaration must be a regular file")
     return True

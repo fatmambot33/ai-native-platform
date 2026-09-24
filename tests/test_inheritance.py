@@ -280,6 +280,19 @@ def test_doctor_rejects_declaration_and_directory_symlinks(tmp_path) -> None:
         assert [finding.code for finding in doctor(root)] == ["inheritance.invalid"]
 
 
+def test_doctor_preserves_opt_out_for_symlinked_metadata_directory(tmp_path) -> None:
+    """A metadata symlink without a declaration must remain non-derived."""
+    outside = tmp_path / "metadata"
+    outside.mkdir()
+    root = tmp_path / "repo"
+    root.mkdir()
+    try:
+        (root / ".ai-native").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are unavailable on this platform")
+    assert doctor(root) == []
+
+
 def test_doctor_reports_broken_declaration_symlink(tmp_path) -> None:
     declaration_path = tmp_path / ".ai-native" / "derived.yaml"
     declaration_path.parent.mkdir()
