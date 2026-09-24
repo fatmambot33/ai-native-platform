@@ -202,9 +202,21 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "capabilities": capabilities,
             "unexpected": True,
         },
-        {**complete, "capabilities": {**capabilities, "welcome": "append"}, "extensions": {"welcome": 123}},
-        {**complete, "capabilities": {**capabilities, "welcome": "append"}, "extensions": {"welcome": [123]}},
-        {**complete, "capabilities": {**capabilities, "welcome": "append"}, "extensions": {"welcome": [""]}},
+        {
+            **complete,
+            "capabilities": {**capabilities, "welcome": "append"},
+            "extensions": {"welcome": 123},
+        },
+        {
+            **complete,
+            "capabilities": {**capabilities, "welcome": "append"},
+            "extensions": {"welcome": [123]},
+        },
+        {
+            **complete,
+            "capabilities": {**capabilities, "welcome": "append"},
+            "extensions": {"welcome": [""]},
+        },
     )
     for candidate in invalid_declarations:
         if not list(validator.iter_errors(candidate)):
