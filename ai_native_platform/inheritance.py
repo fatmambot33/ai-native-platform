@@ -101,8 +101,8 @@ def _schema_path() -> Path:
     package_root = Path(__file__).resolve().parent
     module_root = package_root.parent
     candidates = (
-        module_root / "schemas" / SCHEMA_NAME,
         package_root / "schemas" / SCHEMA_NAME,
+        module_root / "schemas" / SCHEMA_NAME,
         module_root / "share" / "ai-native-platform" / SCHEMA_NAME,
     )
     for candidate in candidates:
