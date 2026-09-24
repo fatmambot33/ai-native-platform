@@ -19,7 +19,7 @@ All notable changes are documented here.
 
 ### Migration
 
-- Derived repositories adopting inheritance should copy `templates/derived.yaml` to `.ai-native/derived.yaml`, replace `platform.ref` with an immutable release or commit containing the inheritance contract, select a registered profile, declare capability composition explicitly, and run `ai-native doctor` before committing the declaration. Existing repositories without `.ai-native/derived.yaml` retain their current behavior.
+- Phase 1 inheritance is library-only. Derived library repositories should copy `templates/derived.yaml` to `.ai-native/derived.yaml`, replace `platform.ref` with an immutable release or commit containing the inheritance contract, use the `library` profile, declare capability composition explicitly, and run `ai-native doctor` before committing the declaration. The other registered platform profiles are not inheritance overlays in this phase. Existing repositories without `.ai-native/derived.yaml` retain their current behavior.
 - Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, finish deterministic CI before spending the one-shot Codex review request, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
 
 
