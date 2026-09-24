@@ -286,7 +286,10 @@ def _append_packaged_schema_finding(root: Path, findings: list[Finding]) -> None
         findings.append(
             Finding(
                 "standard.schema_copy_drift",
-                "Packaged inheritance schema must be byte-for-byte identical to the canonical schema.",
+                (
+                    "Packaged inheritance schema must be byte-for-byte identical "
+                    "to the canonical schema."
+                ),
                 packaged_relative,
             )
         )
