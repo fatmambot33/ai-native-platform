@@ -275,6 +275,7 @@ def _schema_errors(data: Mapping[str, Any], schema_path: Path | None = None) -> 
 
 def _safe_path(value: str) -> PurePosixPath:
     """Validate and normalize one portable repository-relative ownership path."""
+    raw_parts = value.split("/")
     posix_path = PurePosixPath(value)
     windows_path = PureWindowsPath(value)
     unsafe_component = any(
@@ -293,8 +294,8 @@ def _safe_path(value: str) -> PurePosixPath:
         or posix_path.is_absolute()
         or windows_path.is_absolute()
         or bool(windows_path.drive)
-        or ".." in posix_path.parts
-        or "." in posix_path.parts
+        or ".." in raw_parts
+        or "." in raw_parts
         or unsafe_component
     ):
         raise InheritanceError(f"unsafe ownership path: {value!r}")
