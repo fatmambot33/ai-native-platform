@@ -273,6 +273,7 @@ def _append_derived_starter_finding(root: Path, findings: list[Finding]) -> None
     except (
         OSError,
         UnicodeError,
+        ValueError,
         json.JSONDecodeError,
         SchemaError,
         Unresolvable,
