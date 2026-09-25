@@ -71,3 +71,18 @@ def test_public_doctor_handles_root_resolution_failure_before_base_doctor(
     assert ai_native_entry.command_doctor(args) == 1
     assert called is False
     assert "cannot resolve repository root" in capsys.readouterr().out
+
+
+def test_ai_native_main_routes_doctor_through_inheritance(tmp_path, monkeypatch, capsys) -> None:
+    """The module/script entry path must not bypass inheritance validation."""
+    import ai_native
+
+    declaration = _declaration()
+    declaration["platform"]["ref"] = "main"
+    path = tmp_path / ".ai-native" / "derived.yaml"
+    path.parent.mkdir()
+    path.write_text(yaml.safe_dump(declaration), encoding="utf-8")
+    monkeypatch.setattr(ai_native, "command_doctor", lambda args: 0)
+
+    assert ai_native.main(["doctor", "--root", str(tmp_path)]) == 1
+    assert "FAIL Repository inheritance" in capsys.readouterr().out
