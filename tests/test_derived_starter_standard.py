@@ -102,3 +102,13 @@ ownership:
     assert len(findings) == 1
     assert findings[0].code == "standard.derived_template_invalid"
     assert "welcome: append requires local content" in findings[0].message
+
+
+def test_integer_conversion_failure_is_reported_as_finding(tmp_path: Path) -> None:
+    """Pathological YAML integers must fail closed without escaping validation."""
+    _write_starter(tmp_path, "version: " + "9" * 5000 + "\n")
+
+    findings = _findings(tmp_path)
+
+    assert len(findings) == 1
+    assert findings[0].code == "standard.derived_template_invalid"
