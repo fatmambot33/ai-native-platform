@@ -12,7 +12,7 @@ A derived repository declares `.ai-native/derived.yaml`:
 version: 1
 platform:
   repository: fatmambot33/ai-native-platform
-  ref: 40e105f9c373e9588fbdd1c8130a8aba13f8671a
+  ref: 5cbb3f9ea0f8ca2664a80528542e724d5ca54102
 profile: library
 capabilities:
   welcome: inherit
