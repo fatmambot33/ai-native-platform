@@ -198,3 +198,19 @@ def test_root_agent_policy_is_codeowner_protected() -> None:
     validator = (ROOT / "validator/validate_standard.py").read_text(encoding="utf-8")
     assert "/AGENTS.md @fatmambot33" in codeowners
     assert '"AGENTS.md",' in validator
+
+
+def test_derived_starter_is_shipped_as_distribution_data() -> None:
+    """The documented derived starter must be included in built distributions."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    data_files = pyproject["tool"]["setuptools"]["data-files"]["share/ai-native-platform"]
+    assert "templates/derived.yaml" in data_files
+
+
+def test_derived_examples_pin_package_first_schema_checkpoint() -> None:
+    """Starter and docs must pin a revision containing package-first schema lookup."""
+    expected = "5cbb3f9ea0f8ca2664a80528542e724d5ca54102"
+    starter = yaml.safe_load((ROOT / "templates/derived.yaml").read_text(encoding="utf-8"))
+    docs = (ROOT / "docs/INHERITANCE.md").read_text(encoding="utf-8")
+    assert starter["platform"]["ref"] == expected
+    assert expected in docs
