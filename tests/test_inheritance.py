@@ -91,6 +91,9 @@ def test_unknown_contract_profile_capability_and_mode_fail_closed() -> None:
 
 def test_ownership_rejects_nonportable_paths_and_cross_owner_overlap() -> None:
     unsafe_paths = (
+        ".",
+        "./src",
+        "src/./module.py",
         "../outside",
         "..\\outside",
         "C:\\outside",
