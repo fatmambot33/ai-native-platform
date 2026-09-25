@@ -1398,10 +1398,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the AI-native platform CLI."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    return int(args.handler(args))
+    """Run the public AI-native CLI, including inheritance-aware doctor checks."""
+    from ai_native_entry import main as public_main
+
+    return public_main(argv)
 
 
 if __name__ == "__main__":
