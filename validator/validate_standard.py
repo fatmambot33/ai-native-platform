@@ -237,6 +237,7 @@ def _append_schema_finding(root: Path, relative: str, findings: list[Finding]) -
         json.JSONDecodeError,
         SchemaError,
         Unresolvable,
+        RecursionError,
     ) as exc:
         findings.append(Finding("standard.schema_invalid", str(exc), relative))
 
