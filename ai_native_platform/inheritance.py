@@ -128,19 +128,34 @@ def load_declaration(path: Path) -> dict[str, Any]:
     return loaded
 
 
+_SCHEMA_MAP_KEYWORDS = frozenset({"$defs", "definitions", "properties", "patternProperties", "dependentSchemas"})
+_SCHEMA_SINGLE_KEYWORDS = frozenset({"additionalProperties", "contains", "contentSchema", "else", "if", "items", "not", "propertyNames", "then", "unevaluatedItems", "unevaluatedProperties"})
+_SCHEMA_ARRAY_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+
+
 def _iter_schema_references(value: object):
-    """Yield every JSON Schema reference in deterministic document order."""
-    if isinstance(value, dict):
-        reference = value.get("$ref")
-        if reference is not None:
-            if not isinstance(reference, str):
-                raise InheritanceError("schema $ref values must be strings")
-            yield reference
-        for child in value.values():
+    """Yield references only from positions with JSON Schema semantics."""
+    if not isinstance(value, dict):
+        return
+    reference = value.get("$ref")
+    if reference is not None:
+        if not isinstance(reference, str):
+            raise InheritanceError("schema $ref values must be strings")
+        yield reference
+    for keyword in _SCHEMA_MAP_KEYWORDS:
+        children = value.get(keyword)
+        if isinstance(children, dict):
+            for child in children.values():
+                yield from _iter_schema_references(child)
+    for keyword in _SCHEMA_SINGLE_KEYWORDS:
+        child = value.get(keyword)
+        if isinstance(child, dict):
             yield from _iter_schema_references(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _iter_schema_references(child)
+    for keyword in _SCHEMA_ARRAY_KEYWORDS:
+        children = value.get(keyword)
+        if isinstance(children, list):
+            for child in children:
+                yield from _iter_schema_references(child)
 
 
 def _validate_schema_references(schema: Mapping[str, Any]) -> None:
@@ -237,6 +252,17 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
         }
         if list(validator.iter_errors(candidate)):
             raise InheritanceError("derived schema does not preserve all v1 composition modes")
+
+    invalid_ownership = (
+        {"ownership": []},
+        {"ownership": {"local": 123}},
+        {"ownership": {"local": [123]}},
+        {"ownership": {"unknown": ["contract/unknown.txt"]}},
+    )
+    for extra in invalid_ownership:
+        candidate = {**complete, **extra}
+        if not list(validator.iter_errors(candidate)):
+            raise InheritanceError("derived schema does not enforce the v1 fail-closed contract")
 
     for owner in ("inherited", "managed", "merged", "local"):
         candidate = {
