@@ -13,6 +13,7 @@ import tomli as tomllib
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from referencing.exceptions import Unresolvable
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -29,6 +30,12 @@ from ai_native import (  # noqa: E402, I001
     load_schema,
     validate_manifest,
 )
+from ai_native_platform.inheritance import (  # noqa: E402
+    InheritanceError,
+    _validate_schema_references,
+    load_declaration,
+    validate_declaration,
+)
 
 ISSUE_FORM = ROOT / ".github/ISSUE_TEMPLATE/ai-improvement.yml"
 PROFILES = ("library", "cli", "service", "agent-tool", "plugin", "full-platform")
@@ -43,11 +50,17 @@ REQUIRED_FILES = (
     "SECURITY.md",
     "pyproject.toml",
     "ai_native.py",
+    "ai_native_entry.py",
+    "ai_native_platform/__init__.py",
+    "ai_native_platform/inheritance.py",
+    "ai_native_platform/schemas/ai-native-derived.schema.json",
     "standard/AI_NATIVE_PLATFORM.yaml",
     "schemas/ai-native-platform.schema.json",
+    "schemas/ai-native-derived.schema.json",
     "validator/validate.py",
     "validator/validate_standard.py",
     "templates/AI_NATIVE_PLATFORM.yaml",
+    "templates/derived.yaml",
     "templates/validate.yml",
     "templates/AGENTS.md",
     "consumers/registry.yaml",
@@ -55,6 +68,7 @@ REQUIRED_FILES = (
     "actions/codex-review-gate/codex-review-gate.sh",
     "docs/GOVERNANCE.md",
     "docs/AI_REVIEW_GOVERNANCE.md",
+    "docs/INHERITANCE.md",
     "docs/DISTRIBUTION.md",
     "docs/RELEASE.md",
     "tests/test_validation.py",
@@ -211,8 +225,68 @@ def _append_identity_findings(root: Path, findings: list[Finding]) -> dict:
     return standard
 
 
+def _append_schema_finding(root: Path, relative: str, findings: list[Finding]) -> None:
+    """Parse, meta-validate, and resolve local references in one schema."""
+    try:
+        schema = json.loads((root / relative).read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        _validate_schema_references(schema)
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        SchemaError,
+        Unresolvable,
+        RecursionError,
+    ) as exc:
+        findings.append(Finding("standard.schema_invalid", str(exc), relative))
+
+
+def _append_packaged_schema_finding(root: Path, findings: list[Finding]) -> None:
+    """Require the packaged inheritance schema to match the canonical schema exactly."""
+    canonical_relative = "schemas/ai-native-derived.schema.json"
+    packaged_relative = "ai_native_platform/schemas/ai-native-derived.schema.json"
+    try:
+        canonical = (root / canonical_relative).read_bytes()
+        packaged = (root / packaged_relative).read_bytes()
+    except OSError as exc:
+        findings.append(Finding("standard.schema_copy_invalid", str(exc), packaged_relative))
+        return
+    if packaged != canonical:
+        findings.append(
+            Finding(
+                "standard.schema_copy_drift",
+                (
+                    "Packaged inheritance schema must be byte-for-byte identical "
+                    "to the canonical schema."
+                ),
+                packaged_relative,
+            )
+        )
+
+
+def _append_derived_starter_finding(root: Path, findings: list[Finding]) -> None:
+    """Parse and validate the canonical derived-repository starter."""
+    relative = "templates/derived.yaml"
+    try:
+        declaration = load_declaration(root / relative)
+        validate_declaration(declaration)
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        json.JSONDecodeError,
+        SchemaError,
+        Unresolvable,
+        yaml.YAMLError,
+        InheritanceError,
+        RecursionError,
+    ) as exc:
+        findings.append(Finding("standard.derived_template_invalid", str(exc), relative))
+
+
 def _append_contract_findings(root: Path, standard: dict, findings: list[Finding]) -> None:
-    """Validate profiles, schema, template, and fixtures."""
+    """Validate profiles, schemas, template, and fixtures."""
     profiles = standard.get("profiles", {})
     if not isinstance(profiles, dict):
         findings.append(
@@ -239,6 +313,9 @@ def _append_contract_findings(root: Path, standard: dict, findings: list[Finding
                 "schemas/ai-native-platform.schema.json",
             )
         )
+    _append_schema_finding(root, "schemas/ai-native-derived.schema.json", findings)
+    _append_packaged_schema_finding(root, findings)
+    _append_derived_starter_finding(root, findings)
 
     template = load_mapping(root / "templates/AI_NATIVE_PLATFORM.yaml")
     for finding in contract_findings(template):
@@ -405,13 +482,19 @@ def _append_repository_findings(root: Path, findings: list[Finding]) -> None:
         "actions/codex-review-gate/preflight.sh",
         ".github/workflows/__ai_native_required_check_probe__.yml",
         "schemas/ai-native-platform.schema.json",
+        "schemas/ai-native-derived.schema.json",
         "standard/AI_NATIVE_PLATFORM.yaml",
         "ai_native.py",
+        "ai_native_entry.py",
+        "ai_native_platform/__init__.py",
+        "ai_native_platform/inheritance.py",
         "validator/validate_standard.py",
         "templates/AI_NATIVE_PLATFORM.yaml",
+        "templates/derived.yaml",
         "consumers/registry.yaml",
         "docs/GOVERNANCE.md",
         "docs/AI_REVIEW_GOVERNANCE.md",
+        "docs/INHERITANCE.md",
         "docs/SECURITY_EVIDENCE.md",
         "docs/DISTRIBUTION.md",
         "docs/RELEASE.md",
