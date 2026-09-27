@@ -128,8 +128,24 @@ def load_declaration(path: Path) -> dict[str, Any]:
     return loaded
 
 
-_SCHEMA_MAP_KEYWORDS = frozenset({"$defs", "definitions", "properties", "patternProperties", "dependentSchemas"})
-_SCHEMA_SINGLE_KEYWORDS = frozenset({"additionalProperties", "contains", "contentSchema", "else", "if", "items", "not", "propertyNames", "then", "unevaluatedItems", "unevaluatedProperties"})
+_SCHEMA_MAP_KEYWORDS = frozenset(
+    {"$defs", "definitions", "properties", "patternProperties", "dependentSchemas"}
+)
+_SCHEMA_SINGLE_KEYWORDS = frozenset(
+    {
+        "additionalProperties",
+        "contains",
+        "contentSchema",
+        "else",
+        "if",
+        "items",
+        "not",
+        "propertyNames",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    }
+)
 _SCHEMA_ARRAY_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
 
 
