@@ -196,12 +196,16 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             for missing in complete
         ),
         {"version": 1, "platform": {}, "capabilities": {}},
+        {"version": 1, "platform": {"ref": "v1.0.0"}, "capabilities": capabilities},
         {
             "version": 1,
             "platform": {"repository": "fatmambot33/ai-native-platform"},
             "capabilities": capabilities,
         },
         {"version": 2, "platform": platform, "capabilities": capabilities},
+        {"version": 1, "platform": {**platform, "ref": 1111111111111111111111111111111111111111}, "capabilities": capabilities},
+        {"version": 1, "platform": {**platform, "unexpected": True}, "capabilities": capabilities},
+        {**complete, "extensions": {"unexpected": ["local"]}},
         {
             "version": 1,
             "platform": {"repository": "evil/other", "ref": "v1.0.0"},
@@ -446,8 +450,15 @@ def resolve(data: Mapping[str, Any]) -> dict[str, ResolvedCapability]:
     return resolved
 
 
+def _is_reparse_point(metadata: object) -> bool:
+    """Return whether filesystem metadata identifies a Windows reparse point."""
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(attributes & reparse_flag)
+
+
 def _require_regular_declaration(root: Path, declaration_path: Path) -> bool:
-    """Check for a repository-owned declaration without following symlinks."""
+    """Check for a repository-owned declaration without following indirections."""
     ai_native = root / ".ai-native"
     directory_stat = ai_native.lstat()
     if not stat.S_ISDIR(directory_stat.st_mode) and not stat.S_ISLNK(directory_stat.st_mode):
@@ -456,8 +467,8 @@ def _require_regular_declaration(root: Path, declaration_path: Path) -> bool:
         declaration_stat = declaration_path.lstat()
     except FileNotFoundError:
         return False
-    if stat.S_ISLNK(directory_stat.st_mode):
-        raise InheritanceError(".ai-native must not be a symlink")
+    if stat.S_ISLNK(directory_stat.st_mode) or _is_reparse_point(directory_stat):
+        raise InheritanceError(".ai-native must not be a symlink or reparse point")
     if stat.S_ISLNK(declaration_stat.st_mode) or not stat.S_ISREG(declaration_stat.st_mode):
         raise InheritanceError("derived declaration must be a regular file")
     return True

@@ -57,3 +57,31 @@ def test_schema_contract_requires_each_capability(tmp_path, capability) -> None:
 
     with pytest.raises(InheritanceError, match="fail-closed contract"):
         validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+def test_schema_contract_requires_platform_repository(tmp_path) -> None:
+    """Canonical hardening must detect removal of the provider repository requirement."""
+    schema = _canonical_schema()
+    schema["properties"]["platform"]["required"].remove("repository")
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+def test_schema_contract_requires_string_platform_ref(tmp_path) -> None:
+    """Canonical hardening must detect removal of the provider ref type."""
+    schema = _canonical_schema()
+    del schema["properties"]["platform"]["properties"]["ref"]["type"]
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+@pytest.mark.parametrize("mapping", ("platform", "extensions"))
+def test_schema_contract_rejects_nested_extra_properties(tmp_path, mapping) -> None:
+    """Canonical hardening must preserve closed nested contract mappings."""
+    schema = _canonical_schema()
+    schema["properties"][mapping]["additionalProperties"] = True
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))

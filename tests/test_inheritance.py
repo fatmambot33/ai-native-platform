@@ -3,7 +3,9 @@
 import argparse
 import copy
 import json
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -281,6 +283,27 @@ def test_doctor_rejects_declaration_and_directory_symlinks(tmp_path) -> None:
         except (OSError, NotImplementedError):
             pytest.skip("symlinks are unavailable on this platform")
         assert [finding.code for finding in doctor(root)] == ["inheritance.invalid"]
+
+
+def test_doctor_rejects_windows_reparse_metadata_directory(tmp_path, monkeypatch) -> None:
+    """Doctor must reject junction-like metadata directories without following them."""
+    from ai_native_platform import inheritance
+
+    _write_declaration(tmp_path)
+    original_lstat = inheritance.Path.lstat
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+    def reparse_lstat(path):
+        metadata = original_lstat(path)
+        if path.name == ".ai-native":
+            return SimpleNamespace(
+                st_mode=metadata.st_mode,
+                st_file_attributes=reparse_flag,
+            )
+        return metadata
+
+    monkeypatch.setattr(inheritance.Path, "lstat", reparse_lstat)
+    assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
 
 
 def test_doctor_preserves_opt_out_for_symlinked_metadata_directory(tmp_path) -> None:
