@@ -203,7 +203,11 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "capabilities": capabilities,
         },
         {"version": 2, "platform": platform, "capabilities": capabilities},
-        {"version": 1, "platform": {**platform, "ref": 1111111111111111111111111111111111111111}, "capabilities": capabilities},
+        {
+            "version": 1,
+            "platform": {**platform, "ref": 1111111111111111111111111111111111111111},
+            "capabilities": capabilities,
+        },
         {"version": 1, "platform": {**platform, "unexpected": True}, "capabilities": capabilities},
         {**complete, "extensions": {"unexpected": ["local"]}},
         {
