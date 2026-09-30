@@ -207,9 +207,9 @@ def test_derived_starter_is_shipped_as_distribution_data() -> None:
     assert "templates/derived.yaml" in data_files
 
 
-def test_derived_examples_pin_package_first_schema_checkpoint() -> None:
-    """Starter and docs must pin a revision containing package-first schema lookup."""
-    expected = "59ab4d756a8c21b5ff258bdec7bab3b733699c76"
+def test_derived_examples_pin_reparse_hardened_checkpoint() -> None:
+    """Starter and docs must pin a revision containing Windows reparse-point hardening."""
+    expected = "3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc"
     starter = yaml.safe_load((ROOT / "templates/derived.yaml").read_text(encoding="utf-8"))
     docs = (ROOT / "docs/INHERITANCE.md").read_text(encoding="utf-8")
     assert starter["platform"]["ref"] == expected
