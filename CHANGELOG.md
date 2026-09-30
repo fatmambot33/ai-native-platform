@@ -6,17 +6,20 @@ All notable changes are documented here.
 
 ### Added
 
+- Add the versioned AI Native inheritance contract for derived repositories, including deterministic `ai-native doctor` validation, provenance-aware capability composition, portable ownership validation, and the `templates/derived.yaml` starter declaration.
 - Add opt-in `evidence.paths.ai_review_workflow` governance evidence with structural validation of trusted current-HEAD Codex review workflows.
 - Add a reusable Codex review gate that binds automated clean-reaction requests to the exact PR HEAD through server-verified GitHub Actions request-run provenance scoped to both head and base revisions.
 
 ### Security
 
+- Require inheritance declarations to fail closed on malformed or ambiguous configuration, unsafe ownership paths, filesystem indirection, and damaged inheritance schemas.
 - Require request jobs to use least-privilege permissions, keep wait jobs read-only, preserve the `codex-review` check name, and reject job-level concurrency/timeouts that can bypass or destabilize the gate.
 - Require full pull-request activity coverage, direct `.github/workflows` placement, valid CODEOWNERS identities below GitHub's size limit, workflow-namespace ownership, executable runner declarations, and ownership of the reusable gate implementation plus registry-controlled executable validation pins.
 - Keep bootstrap evidence fail-closed: collaborator-authored bootstrap markers are not trusted; bootstrap succeeds only through an exact-HEAD native Codex review bound to the active base or trusted bot request evidence bound to the exact HEAD and base revisions.
 
 ### Migration
 
+- Phase 1 inheritance is library-only. Derived library repositories should copy `templates/derived.yaml` to `.ai-native/derived.yaml`, replace `platform.ref` with an immutable release or commit containing the inheritance contract, use the `library` profile, declare capability composition explicitly, and run `ai-native doctor` before committing the declaration. The other registered platform profiles are not inheritance overlays in this phase. Existing repositories without `.ai-native/derived.yaml` retain their current behavior.
 - Consumers opting into `ai_review_workflow` must pin the gate action to an immutable trusted framework commit, protect `/.github/workflows/**` and `/.github/CODEOWNERS`, require the `codex-review` check, finish deterministic CI before spending the one-shot Codex review request, enable code-owner review with stale approvals dismissed on new pushes, and keep conversation resolution enabled.
 
 
