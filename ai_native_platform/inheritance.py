@@ -27,6 +27,7 @@ _SEMVER_PRERELEASE = rf"(?:-{_SEMVER_IDENTIFIER}(?:\.{_SEMVER_IDENTIFIER})*)?"
 _SEMVER_BUILD = r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 _SEMVER = rf"{_SEMVER_CORE}{_SEMVER_PRERELEASE}{_SEMVER_BUILD}"
 REF_PATTERN = re.compile(rf"(?:[0-9a-f]{{40}}|v?{_SEMVER})")
+CONTRACT_V1_REFS = frozenset({"3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc"})
 SCHEMA_NAME = "ai-native-derived.schema.json"
 _WINDOWS_RESERVED = {
     "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
@@ -203,6 +204,8 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "capabilities": capabilities,
         },
         {"version": 2, "platform": platform, "capabilities": capabilities},
+        {"version": 1, "platform": [], "capabilities": capabilities},
+        {"version": 1, "platform": platform, "capabilities": []},
         {
             "version": 1,
             "platform": {**platform, "ref": 1111111111111111111111111111111111111111},
@@ -261,21 +264,24 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
         if not list(validator.iter_errors(candidate)):
             raise InheritanceError("derived schema does not enforce the v1 fail-closed contract")
 
-    valid_modes = (
-        ("inherit", {}),
-        ("append", {"extensions": {"welcome": ["welcome-local"]}}),
-        ("override", {"extensions": {"welcome": ["welcome-local"]}}),
-        ("disable", {}),
-    )
-    for mode, extra in valid_modes:
-        candidate = {
-            "version": 1,
-            "platform": platform,
-            "capabilities": {**capabilities, "welcome": mode},
-            **extra,
-        }
-        if list(validator.iter_errors(candidate)):
-            raise InheritanceError("derived schema does not preserve all v1 composition modes")
+    for capability in CAPABILITIES:
+        valid_modes = (
+            ("inherit", {}),
+            ("append", {"extensions": {capability: [f"{capability}-local"]}}),
+            ("override", {"extensions": {capability: [f"{capability}-local"]}}),
+            ("disable", {}),
+        )
+        for mode, extra in valid_modes:
+            candidate = {
+                "version": 1,
+                "platform": platform,
+                "capabilities": {**capabilities, capability: mode},
+                **extra,
+            }
+            if list(validator.iter_errors(candidate)):
+                raise InheritanceError(
+                    "derived schema does not preserve all v1 composition modes"
+                )
 
     invalid_ownership = (
         {"ownership": []},
@@ -404,6 +410,8 @@ def validate_declaration(
     ref = str(data["platform"]["ref"])
     if REF_PATTERN.fullmatch(ref) is None:
         raise InheritanceError("platform.ref must be immutable")
+    if ref not in CONTRACT_V1_REFS:
+        raise InheritanceError("platform.ref does not identify a supported contract-v1 provider")
 
     profile = data.get("profile")
     if profile is not None and profile not in PROFILES:
@@ -473,8 +481,12 @@ def _require_regular_declaration(root: Path, declaration_path: Path) -> bool:
         return False
     if stat.S_ISLNK(directory_stat.st_mode) or _is_reparse_point(directory_stat):
         raise InheritanceError(".ai-native must not be a symlink or reparse point")
-    if stat.S_ISLNK(declaration_stat.st_mode) or not stat.S_ISREG(declaration_stat.st_mode):
-        raise InheritanceError("derived declaration must be a regular file")
+    if (
+        stat.S_ISLNK(declaration_stat.st_mode)
+        or _is_reparse_point(declaration_stat)
+        or not stat.S_ISREG(declaration_stat.st_mode)
+    ):
+        raise InheritanceError("derived declaration must be a regular file without indirection")
     return True
 
 
