@@ -23,7 +23,7 @@ ownership:
   local: []
 ```
 
-The platform reference MUST be immutable: either a full 40-character commit SHA or an exact semantic-version tag whose release contains inheritance contract version 1. Until such a release is published, use the immutable implementation checkpoint shown above. Branches, moving tags, and version ranges are invalid.
+The platform reference MUST be immutable and MUST identify a provider revision explicitly known to contain inheritance contract version 1. The validator therefore accepts only contract-v1 refs registered by the platform. Until a release containing v1 is registered, use the immutable implementation checkpoint shown above. Syntax alone is not sufficient: older releases such as `v0.3.0`, unknown commit SHAs, branches, moving tags, and version ranges are invalid.
 
 The declaration is optional. A repository without `.ai-native/derived.yaml` keeps the existing platform behavior and remains compatible with the pre-inheritance doctor path.
 
