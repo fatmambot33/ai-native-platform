@@ -7,7 +7,7 @@ from pathlib import Path
 from ai_native import Finding
 from validator.validate_standard import _append_derived_starter_finding
 
-VALID_REF = "c230f7398ea936e98e4a0ceecd5b069b9248d50e"
+VALID_REF = "3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc"
 
 
 def _write_starter(root: Path, content: str) -> None:
