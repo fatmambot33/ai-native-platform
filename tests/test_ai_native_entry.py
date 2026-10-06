@@ -7,7 +7,7 @@ import yaml
 
 import ai_native_entry
 
-PLATFORM_REF = "b2793f9fae645df1bda7492da01627396fc5e29f"
+PLATFORM_REF = "3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc"
 
 
 def _declaration() -> dict:
