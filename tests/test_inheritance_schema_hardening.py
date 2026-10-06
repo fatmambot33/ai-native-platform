@@ -20,7 +20,7 @@ def _valid_declaration() -> dict:
         "version": 1,
         "platform": {
             "repository": "fatmambot33/ai-native-platform",
-            "ref": "v1.0.0",
+            "ref": "3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc",
         },
         "capabilities": {name: "inherit" for name in CAPABILITIES},
     }
@@ -84,4 +84,26 @@ def test_schema_contract_rejects_nested_extra_properties(tmp_path, mapping) -> N
     schema["properties"][mapping]["additionalProperties"] = True
 
     with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+@pytest.mark.parametrize("mapping", ("platform", "capabilities"))
+def test_schema_contract_requires_mapping_sections(tmp_path, mapping) -> None:
+    """Canonical hardening must preserve object types for required sections."""
+    schema = _canonical_schema()
+    del schema["properties"][mapping]["type"]
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+@pytest.mark.parametrize("capability", CAPABILITIES)
+def test_schema_contract_preserves_modes_for_each_capability(tmp_path, capability) -> None:
+    """Every capability must continue to accept every v1 composition mode."""
+    schema = _canonical_schema()
+    schema["properties"]["capabilities"]["properties"][capability] = {
+        "enum": ["inherit"]
+    }
+
+    with pytest.raises(InheritanceError, match="composition modes"):
         validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
