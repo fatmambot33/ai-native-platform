@@ -19,7 +19,7 @@ from ai_native_platform.inheritance import (
     validate_declaration,
 )
 
-PLATFORM_REF = "b2793f9fae645df1bda7492da01627396fc5e29f"
+PLATFORM_REF = "3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -197,23 +197,29 @@ def test_large_ownership_manifest_validates() -> None:
     validate_declaration(candidate)
 
 
-def test_platform_reference_semver_is_fail_closed() -> None:
-    valid_refs = (
+def test_platform_reference_is_immutable_and_contract_v1_supported() -> None:
+    """Only immutable refs known to contain contract v1 are accepted."""
+    for unsupported in (
+        "v0.3.0",
         "1.2.3",
-        "v1.2.3",
-        "1.2.3-alpha.1",
-        "1.2.3+build.7",
-        "1.2.3-rc.1+build.7",
-    )
-    for valid in valid_refs:
+        "0" * 40,
+    ):
         candidate = declaration()
-        candidate["platform"]["ref"] = valid
-        validate_declaration(candidate)
-    invalid_refs = ("main", "01.2.3", "1.02.3", "1.2.03", "1.2.3-01", "1.2.3-alpha..1")
-    for invalid in invalid_refs:
+        candidate["platform"]["ref"] = unsupported
+        with pytest.raises(InheritanceError, match="supported contract-v1 provider"):
+            validate_declaration(candidate)
+
+    for mutable_or_malformed in (
+        "main",
+        "01.2.3",
+        "1.02.3",
+        "1.2.03",
+        "1.2.3-01",
+        "1.2.3-alpha..1",
+    ):
         candidate = declaration()
-        candidate["platform"]["ref"] = invalid
-        with pytest.raises(InheritanceError):
+        candidate["platform"]["ref"] = mutable_or_malformed
+        with pytest.raises(InheritanceError, match="platform.ref"):
             validate_declaration(candidate)
 
 
@@ -296,6 +302,27 @@ def test_doctor_rejects_windows_reparse_metadata_directory(tmp_path, monkeypatch
     def reparse_lstat(path):
         metadata = original_lstat(path)
         if path.name == ".ai-native":
+            return SimpleNamespace(
+                st_mode=metadata.st_mode,
+                st_file_attributes=reparse_flag,
+            )
+        return metadata
+
+    monkeypatch.setattr(inheritance.Path, "lstat", reparse_lstat)
+    assert [finding.code for finding in doctor(tmp_path)] == ["inheritance.invalid"]
+
+
+def test_doctor_rejects_windows_reparse_declaration_file(tmp_path, monkeypatch) -> None:
+    """Doctor must reject reparse-backed declaration files without opening them."""
+    from ai_native_platform import inheritance
+
+    _write_declaration(tmp_path)
+    original_lstat = inheritance.Path.lstat
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+    def reparse_lstat(path):
+        metadata = original_lstat(path)
+        if path.name == "derived.yaml":
             return SimpleNamespace(
                 st_mode=metadata.st_mode,
                 st_file_attributes=reparse_flag,
