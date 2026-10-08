@@ -86,3 +86,37 @@ def test_ai_native_main_routes_doctor_through_inheritance(tmp_path, monkeypatch,
 
     assert ai_native.main(["doctor", "--root", str(tmp_path)]) == 1
     assert "FAIL Repository inheritance" in capsys.readouterr().out
+
+
+def test_doctor_default_manifest_is_relative_to_root(tmp_path, monkeypatch) -> None:
+    """Selecting a repository root must not read a manifest from the caller CWD."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    observed = []
+
+    def base_doctor(args):
+        observed.append((args.root, args.manifest))
+        return 0
+
+    monkeypatch.setattr(ai_native_entry.ai_native, "command_doctor", base_doctor)
+    assert ai_native_entry.main(["doctor", "--root", str(repository)]) == 0
+    assert observed == [(str(repository), str(repository / "AI_NATIVE_PLATFORM.yaml"))]
+
+
+def test_doctor_explicit_manifest_remains_caller_relative(tmp_path, monkeypatch) -> None:
+    """An explicitly selected manifest keeps the established CLI path semantics."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    monkeypatch.chdir(tmp_path)
+    observed = []
+
+    def base_doctor(args):
+        observed.append(args.manifest)
+        return 0
+
+    monkeypatch.setattr(ai_native_entry.ai_native, "command_doctor", base_doctor)
+    assert ai_native_entry.main(["doctor", "custom.yaml", "--root", str(repository)]) == 0
+    assert observed == ["custom.yaml"]
