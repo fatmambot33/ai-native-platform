@@ -212,6 +212,18 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "capabilities": capabilities,
         },
         {"version": 1, "platform": {**platform, "unexpected": True}, "capabilities": capabilities},
+        *(
+            {
+                **complete,
+                "capabilities": {**capabilities, capability: "append"},
+                "extensions": {capability: ["duplicate", "duplicate"]},
+            }
+            for capability in CAPABILITIES
+        ),
+        *(
+            {**complete, "ownership": {owner: ["duplicate", "duplicate"]}}
+            for owner in ("inherited", "managed", "merged", "local")
+        ),
         {**complete, "extensions": {"unexpected": ["local"]}},
         {
             "version": 1,
