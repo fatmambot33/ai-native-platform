@@ -44,6 +44,10 @@ def command_doctor(args: argparse.Namespace) -> int:
     # symlink loops or other resolution failures. Preserve the CLI contract by
     # passing the canonical root through the same argparse namespace.
     args.root = str(resolved_root)
+    # The default manifest belongs to the selected repository, not the caller CWD.
+    # Explicit manifest paths retain their existing caller-relative semantics.
+    if args.manifest == "AI_NATIVE_PLATFORM.yaml":
+        args.manifest = str(resolved_root / args.manifest)
     status = ai_native.command_doctor(args)
     findings = inheritance_doctor(resolved_root)
     if findings:
