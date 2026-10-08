@@ -107,3 +107,13 @@ def test_schema_contract_preserves_modes_for_each_capability(tmp_path, capabilit
 
     with pytest.raises(InheritanceError, match="composition modes"):
         validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+@pytest.mark.parametrize("definition", ("extensions", "paths"))
+def test_schema_contract_preserves_unique_entries(tmp_path, definition) -> None:
+    """Canonical hardening must reject duplicate local content and ownership paths."""
+    schema = _canonical_schema()
+    del schema["$defs"][definition]["uniqueItems"]
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
