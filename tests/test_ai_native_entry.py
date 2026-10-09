@@ -120,3 +120,41 @@ def test_doctor_explicit_manifest_remains_caller_relative(tmp_path, monkeypatch)
     monkeypatch.setattr(ai_native_entry.ai_native, "command_doctor", base_doctor)
     assert ai_native_entry.main(["doctor", "custom.yaml", "--root", str(repository)]) == 0
     assert observed == ["custom.yaml"]
+
+
+def test_doctor_explicit_default_named_manifest_stays_caller_relative(
+    tmp_path, monkeypatch
+) -> None:
+    """An explicit default-named file must not be rewritten under --root."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    observed = []
+
+    def base_doctor(args):
+        observed.append((args.root, args.manifest))
+        return 0
+
+    monkeypatch.setattr(ai_native_entry.ai_native, "command_doctor", base_doctor)
+    assert ai_native_entry.main(
+        ["doctor", "AI_NATIVE_PLATFORM.yaml", "--root", str(repository)]
+    ) == 0
+    assert observed == [(str(repository), "AI_NATIVE_PLATFORM.yaml")]
+
+
+def test_doctor_without_manifest_or_root_uses_current_repository(
+    tmp_path, monkeypatch
+) -> None:
+    """Omitting both CLI arguments resolves the default under the caller root."""
+    monkeypatch.chdir(tmp_path)
+    observed = []
+
+    def base_doctor(args):
+        observed.append((args.root, args.manifest))
+        return 0
+
+    monkeypatch.setattr(ai_native_entry.ai_native, "command_doctor", base_doctor)
+    assert ai_native_entry.main(["doctor"]) == 0
+    assert observed == [(str(tmp_path), str(tmp_path / "AI_NATIVE_PLATFORM.yaml"))]
