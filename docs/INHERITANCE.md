@@ -52,6 +52,8 @@ Run:
 ai-native doctor --root .
 ```
 
+When `--root` is provided without a positional manifest, doctor looks for `AI_NATIVE_PLATFORM.yaml` under that root. An explicitly supplied manifest path remains relative to the caller's working directory, even when it is named `AI_NATIVE_PLATFORM.yaml`.
+
 The public doctor command runs the existing product checks and inheritance validation. A valid declaration must satisfy the packaged v1 JSON Schema and the cross-field safety invariants. A repository that has not opted in receives the normal compatibility behavior.
 
 Canonical platform validation additionally checks the inheritance schema, starter declaration, packaged schema copy, documentation and governed executable surfaces together so distribution artifacts cannot silently drift from the source contract.
