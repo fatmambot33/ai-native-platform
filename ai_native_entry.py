@@ -12,7 +12,7 @@ from ai_native_platform.inheritance import doctor as inheritance_doctor
 
 def _resolve_root(args: argparse.Namespace) -> tuple[Path | None, DoctorFinding | None]:
     """Resolve the target repository root without allowing path errors to escape."""
-    root = Path(args.root) if args.root else Path(args.manifest).parent
+    root = Path(args.root) if args.root else Path(args.manifest or "AI_NATIVE_PLATFORM.yaml").parent
     try:
         return root.resolve(), None
     except (OSError, RuntimeError) as exc:
@@ -44,10 +44,10 @@ def command_doctor(args: argparse.Namespace) -> int:
     # symlink loops or other resolution failures. Preserve the CLI contract by
     # passing the canonical root through the same argparse namespace.
     args.root = str(resolved_root)
-    # The default manifest belongs to the selected repository, not the caller CWD.
-    # Explicit manifest paths retain their existing caller-relative semantics.
-    if args.manifest == "AI_NATIVE_PLATFORM.yaml":
-        args.manifest = str(resolved_root / args.manifest)
+    # Only an omitted manifest belongs to the selected repository root.
+    # Explicit paths, even when named AI_NATIVE_PLATFORM.yaml, stay caller-relative.
+    if args.manifest is None:
+        args.manifest = str(resolved_root / "AI_NATIVE_PLATFORM.yaml")
     status = ai_native.command_doctor(args)
     findings = inheritance_doctor(resolved_root)
     if findings:
