@@ -117,3 +117,22 @@ def test_schema_contract_preserves_unique_entries(tmp_path, definition) -> None:
 
     with pytest.raises(InheritanceError, match="fail-closed contract"):
         validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+@pytest.mark.parametrize("capability", CAPABILITIES)
+def test_schema_contract_rejects_unknown_modes_for_each_capability(tmp_path, capability) -> None:
+    """Canonical schema hardening must reject invalid modes for each capability."""
+    schema = _canonical_schema()
+    schema["properties"]["capabilities"]["properties"][capability] = {"type": "string"}
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
+
+
+def test_schema_contract_requires_extensions_mapping(tmp_path) -> None:
+    """Malformed extension containers must remain invalid even when unreferenced."""
+    schema = _canonical_schema()
+    del schema["properties"]["extensions"]["type"]
+
+    with pytest.raises(InheritanceError, match="fail-closed contract"):
+        validate_declaration(_valid_declaration(), schema_path=_write_schema(tmp_path, schema))
