@@ -158,3 +158,29 @@ def test_doctor_without_manifest_or_root_uses_current_repository(
     monkeypatch.setattr(ai_native_entry.ai_native, "command_doctor", base_doctor)
     assert ai_native_entry.main(["doctor"]) == 0
     assert observed == [(str(tmp_path), str(tmp_path / "AI_NATIVE_PLATFORM.yaml"))]
+
+
+@pytest.mark.parametrize("explicit", (False, True))
+def test_doctor_checks_actual_manifest_location(tmp_path, monkeypatch, explicit) -> None:
+    """The base doctor must inspect the intended manifest when roots differ."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    for directory in (repository, caller):
+        (directory / "AI_NATIVE_PLATFORM.yaml").write_text("version: 2\n", encoding="utf-8")
+    monkeypatch.chdir(caller)
+    observed = []
+
+    def validate_manifest(manifest, root):
+        observed.append((manifest.resolve(), root.resolve()))
+        return {}, []
+
+    monkeypatch.setattr(ai_native_entry.ai_native, "validate_manifest", validate_manifest)
+    argv = ["doctor", "--root", str(repository)]
+    if explicit:
+        argv.append("AI_NATIVE_PLATFORM.yaml")
+
+    assert ai_native_entry.main(argv) == 0
+    chosen = caller if explicit else repository
+    assert observed == [(chosen / "AI_NATIVE_PLATFORM.yaml", repository)]
