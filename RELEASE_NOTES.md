@@ -15,6 +15,12 @@ Highlights:
 
 Migration: run `ai-native upgrade AI_NATIVE_PLATFORM.yaml --diff`, implement or point `welcome_skill` and `troubleshooting_skill` evidence at real repository behavior for plugin/MCP products, validate locally, and then pin the immutable v0.3 contract.
 
+## Unreleased inheritance preview
+
+The current development branch adds an opt-in inheritance contract for derived repositories. It is not part of v0.3.0. A derived repository can start from `templates/derived.yaml`, install it as `.ai-native/derived.yaml`, keep the starter's registered `platform.ref` (`3e49406e8ac3a9c1f28c6f91b9356ff24a5f41cc`) until another contract-v1 provider revision is explicitly registered, and run `ai-native doctor`. The declaration composes the `welcome`, `troubleshooting`, `update`, and `doctor` capabilities and records portable artifact ownership for later managed updates. Repositories that do not add the declaration keep their existing behavior.
+
+Until a release containing contract v1 is registered, consumers must use the registered implementation checkpoint in the starter rather than v0.3.0 or an arbitrary commit SHA; `ai-native doctor` rejects unregistered refs. The normative rules remain in `docs/INHERITANCE.md` and migration details are tracked in `CHANGELOG.md` under Unreleased.
+
 ## Unreleased AI-review governance preview
 
 AI-review governance is not part of the v0.3.0 contract. The current development branch adds an opt-in `evidence.paths.ai_review_workflow` capability for a future release; consumers pinned to v0.3.0 must not rely on that validator behavior yet.
