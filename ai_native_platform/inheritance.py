@@ -206,6 +206,8 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
         {"version": 2, "platform": platform, "capabilities": capabilities},
         {"version": 1, "platform": [], "capabilities": capabilities},
         {"version": 1, "platform": platform, "capabilities": []},
+        {**complete, "extensions": []},
+        {**complete, "extensions": None},
         {
             "version": 1,
             "platform": {**platform, "ref": 1111111111111111111111111111111111111111},
@@ -245,11 +247,10 @@ def _validate_schema_contract(schema: Mapping[str, Any]) -> None:
             "platform": platform,
             "capabilities": {**capabilities, "extra": "inherit"},
         },
-        {
-            "version": 1,
-            "platform": platform,
-            "capabilities": {**capabilities, "welcome": "magic"},
-        },
+        *(
+            {**complete, "capabilities": {**capabilities, name: "magic"}}
+            for name in CAPABILITIES
+        ),
         {
             "version": 1,
             "platform": platform,
