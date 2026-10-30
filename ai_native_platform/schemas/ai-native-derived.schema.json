@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fatmambot33/ai-native-platform/schemas/ai-native-derived.schema.json",
+  "title": "AI Native derived repository declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "platform", "capabilities"],
+  "properties": {
+    "version": {"const": 1},
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "ref"],
+      "properties": {
+        "repository": {"const": "fatmambot33/ai-native-platform"},
+        "ref": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|v?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$"}
+      }
+    },
+    "profile": {"enum": ["library"]},
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["welcome", "troubleshooting", "update", "doctor"],
+      "properties": {
+        "welcome": {"$ref": "#/$defs/mode"},
+        "troubleshooting": {"$ref": "#/$defs/mode"},
+        "update": {"$ref": "#/$defs/mode"},
+        "doctor": {"$ref": "#/$defs/mode"}
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "welcome": {"$ref": "#/$defs/extensions"},
+        "troubleshooting": {"$ref": "#/$defs/extensions"},
+        "update": {"$ref": "#/$defs/extensions"},
+        "doctor": {"$ref": "#/$defs/extensions"}
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inherited": {"$ref": "#/$defs/paths"},
+        "managed": {"$ref": "#/$defs/paths"},
+        "merged": {"$ref": "#/$defs/paths"},
+        "local": {"$ref": "#/$defs/paths"}
+      }
+    }
+  },
+  "$defs": {
+    "mode": {"enum": ["inherit", "append", "override", "disable"]},
+    "extensions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+    "paths": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  }
+}

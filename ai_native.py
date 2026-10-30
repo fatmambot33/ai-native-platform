@@ -1315,7 +1315,7 @@ def command_doctor(args: argparse.Namespace) -> int:
     except OSError as exc:
         checks.append(("Starter template", False, str(exc)))
 
-    manifest = Path(args.manifest)
+    manifest = Path(args.manifest or "AI_NATIVE_PLATFORM.yaml")
     if manifest.exists():
         try:
             _, findings = validate_manifest(manifest, Path(args.root) if args.root else None)
@@ -1376,7 +1376,7 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor",
         help="Check installation and repository readiness",
     )
-    doctor_parser.add_argument("manifest", nargs="?", default="AI_NATIVE_PLATFORM.yaml")
+    doctor_parser.add_argument("manifest", nargs="?", default=None)
     doctor_parser.add_argument("--root")
     doctor_parser.set_defaults(handler=command_doctor)
 
@@ -1398,10 +1398,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the AI-native platform CLI."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    return int(args.handler(args))
+    """Run the public AI-native CLI, including inheritance-aware doctor checks."""
+    from ai_native_entry import main as public_main
+
+    return public_main(argv)
 
 
 if __name__ == "__main__":
