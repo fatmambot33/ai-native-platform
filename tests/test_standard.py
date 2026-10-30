@@ -104,7 +104,7 @@ def test_codeql_uploads_when_public_and_retains_private_fallback() -> None:
     assert "security-events: write" in workflow
     assert "github.event.repository.private" in workflow
     assert "'never' || 'always'" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v6" in workflow
 
 
 def test_reusable_codex_gate_implementation_is_required() -> None:

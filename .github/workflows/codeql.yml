@@ -27,7 +27,7 @@ jobs:
           upload-database: false
           output: codeql-results
       - name: Retain CodeQL SARIF
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: codeql-results-${{ github.sha }}
           path: codeql-results
